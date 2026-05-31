@@ -55,3 +55,43 @@
 .ot-place:hover { filter: brightness(1.08); }
 .ot-place:disabled { background: var(--border-strong); color: var(--text-muted); cursor: default; filter: none; }
 .ot-note { text-align: center; color: var(--text-dim); font-size: var(--fs-xs); padding-bottom: 12px; }
+
+/* ── Live / Sandbox mode badge in header ── */
+.ot-mode-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.ot-mode-badge.live    { background: rgba(38,166,154,0.15); color: var(--up); }
+.ot-mode-badge.sandbox { background: rgba(255,193,7,0.15);  color: #ffc107; }
+
+/* ── Paper / Live toggle strip ── */
+.ot-order-mode {
+  display: flex;
+  gap: 0;
+  padding: 8px 14px 0;
+}
+.ot-mode-btn {
+  flex: 1;
+  height: 30px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: none;
+}
+.ot-mode-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.ot-mode-btn:last-child  { border-radius: 0 var(--radius) var(--radius) 0; border-left: none; }
+.ot-mode-btn.on { background: var(--hover); color: var(--text-strong); }
+.ot-mode-btn.live.on {
+  background: rgba(38,166,154,0.15);
+  color: var(--up);
+  border-color: var(--up);
+}
+
+/* ── Live order place button variant ── */
+.ot-place-live.buy  { background: linear-gradient(90deg, var(--up) 0%, #1a8a7a 100%); }
+.ot-place-live.sell { background: linear-gradient(90deg, var(--down) 0%, #c62828 100%); }

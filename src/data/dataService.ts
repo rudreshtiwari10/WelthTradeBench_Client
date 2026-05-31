@@ -15,8 +15,12 @@ export interface SearchResult {
   kind: SymbolInfo['kind'];
 }
 
-export async function fetchHistory(symbol: string, interval: Interval, count = 600): Promise<HistoryResponse> {
-  const r = await fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`);
+export async function fetchHistory(
+  symbol: string, interval: Interval, count = 600, instrumentKey?: string
+): Promise<HistoryResponse> {
+  let url = `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
+  if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
+  const r = await fetch(url);
   if (!r.ok) throw new Error(`history ${r.status}`);
   return r.json();
 }
@@ -115,3 +119,49 @@ class LiveFeed {
 }
 
 export const liveFeed = new LiveFeed();
+
+// ─── Derivatives data ─────────────────────────────────────────────────────
+
+export interface DerivChainRow {
+  strike: number;
+  expiry: string;
+  callKey: string | null;
+  callLtp: number;
+  callBid: number;
+  callAsk: number;
+  callOi: number;
+  putKey: string | null;
+  putLtp: number;
+  putBid: number;
+  putAsk: number;
+  putOi: number;
+}
+
+export interface FutureRow {
+  symbol: string;
+  name: string;
+  exchange: string;
+  expiry: string;
+  expiryLabel: string;
+  ltp: number;
+  instrumentKey: string;
+  kind: string;
+}
+
+export async function fetchDerivativesChain(
+  underlying: string, expiry: string
+): Promise<{ source: string; spot: number; chains: DerivChainRow[] }> {
+  const r = await fetch(
+    `/api/derivatives/chain?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}`
+  );
+  if (!r.ok) throw new Error(`derivatives/chain ${r.status}`);
+  return r.json();
+}
+
+export async function fetchFutures(
+  underlying: string
+): Promise<{ source: string; futures: FutureRow[] }> {
+  const r = await fetch(`/api/derivatives/futures?underlying=${encodeURIComponent(underlying)}`);
+  if (!r.ok) throw new Error(`derivatives/futures ${r.status}`);
+  return r.json();
+}

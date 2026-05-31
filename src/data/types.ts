@@ -27,9 +27,9 @@ export interface Tick {
 }
 
 export interface SymbolInfo {
-  symbol: string;       // e.g. "NIFTY"
-  name: string;         // e.g. "Nifty 50 Index"
-  exchange: string;     // e.g. "NSE"
-  instrumentKey?: string;
-  kind?: 'index' | 'stock' | 'future' | 'crypto';
+  symbol: string;       // e.g. "NIFTY" | "NIFTY24NOV24000CE"
+  name: string;         // e.g. "Nifty 50 Index" | "NIFTY 24000 CE 28 Nov"
+  exchange: string;     // e.g. "NSE" | "NSE_FO"
+  instrumentKey?: string; // Upstox key OR "MOCK:option:..." for derivatives
+  kind?: 'index' | 'stock' | 'future' | 'option' | 'crypto';
 }

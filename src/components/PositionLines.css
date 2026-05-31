@@ -1,0 +1,109 @@
+/* ── Position Lines Overlay ─────────────────────────────────────────────── */
+
+.pl-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none; /* pass-through to chart by default */
+}
+
+/* ── Entry line label (left side) ── */
+.pl-entry-label {
+  position: absolute;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: auto;
+  user-select: none;
+  border: 1px solid;
+}
+.pl-entry-label.buy  {
+  background: rgba(38, 166, 154, 0.18);
+  border-color: #26a69a;
+  color: #26a69a;
+}
+.pl-entry-label.sell {
+  background: rgba(239, 83, 80, 0.18);
+  border-color: #ef5350;
+  color: #ef5350;
+}
+
+.pl-entry-dot  { font-size: 9px; }
+.pl-entry-side { font-weight: 800; letter-spacing: 0.04em; }
+.pl-entry-price{ font-variant-numeric: tabular-nums; }
+.pl-entry-qty  { font-size: 10px; opacity: 0.75; }
+
+/* ── SL / TP drag handle (right side, before price scale) ── */
+.pl-handle {
+  position: absolute;
+  right: 68px; /* sits just before the right price-axis */
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: ns-resize;
+  pointer-events: auto;
+  user-select: none;
+  border: 1px solid transparent;
+  transition: filter 0.1s;
+}
+.pl-handle:hover { filter: brightness(1.15); }
+.pl-handle:active { filter: brightness(0.9); }
+
+.pl-sl {
+  background: rgba(239, 83, 80, 0.92);
+  border-color: #ef5350;
+  color: #fff;
+}
+.pl-tp {
+  background: rgba(38, 166, 154, 0.92);
+  border-color: #26a69a;
+  color: #fff;
+}
+
+.pl-grip {
+  font-size: 15px;
+  opacity: 0.65;
+  cursor: ns-resize;
+  line-height: 1;
+}
+
+.pl-handle-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.pl-handle-price { font-variant-numeric: tabular-nums; }
+.pl-handle-pct {
+  font-size: 10px;
+  opacity: 0.9;
+}
+.pl-up { color: rgba(255,255,255,0.95); }
+.pl-dn { color: rgba(255,255,255,0.95); }
+
+/* ── Shared remove button ── */
+.pl-x {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pl-x:hover { color: #fff; }
+
+/* Entry label remove button uses parent color */
+.pl-entry-label .pl-x { color: inherit; opacity: 0.5; }
+.pl-entry-label .pl-x:hover { opacity: 1; }

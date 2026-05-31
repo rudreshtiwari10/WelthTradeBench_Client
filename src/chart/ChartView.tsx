@@ -24,6 +24,8 @@ import { TradeButtons } from '../components/TradeButtons';
 import { AlertsRenderer } from '../components/AlertsRenderer';
 import { ReplayBar } from '../components/ReplayBar';
 import { ObjectTree } from '../components/ObjectTree';
+import { ChartWidgets } from '../components/ChartWidgets';
+import { PositionLines } from '../components/PositionLines';
 import './ChartView.css';
 
 interface LegendData {
@@ -124,7 +126,7 @@ export function ChartView() {
     loadDrawings(`${symbol.symbol}:${interval}`);
 
     (async () => {
-      const res = await fetchHistory(symbol.symbol, interval, 600);
+      const res = await fetchHistory(symbol.symbol, interval, 600, symbol.instrumentKey);
       if (cancelled || priceSeriesRef.current !== priceSeries) return;
       const candles = res.candles;
       candlesRef.current = candles;
@@ -273,7 +275,7 @@ export function ChartView() {
   const cls = up ? 'up' : 'down';
 
   return (
-    <ChartContext.Provider value={{ chartRef, seriesRef: priceSeriesRef, candlesRef, ready }}>
+    <ChartContext.Provider value={{ chartRef, seriesRef: priceSeriesRef, candlesRef, containerRef, ready }}>
     <div className="chart-view">
       <div className="chart-legend">
         <div className="legend-row">
@@ -326,6 +328,8 @@ export function ChartView() {
       <DrawingToolbarState />
       <ReplayBar />
       <ObjectTree />
+      {ready && <PositionLines />}
+      <ChartWidgets />
 
       <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
 

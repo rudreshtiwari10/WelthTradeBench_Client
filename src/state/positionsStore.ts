@@ -3,6 +3,10 @@ import { create } from 'zustand';
 export interface Position {
   id: string;
   symbol: string;        // option contract symbol
+  underlying?: string;   // e.g. "NIFTY" — used for live P&L
+  strike?: number;
+  optType?: 'CE' | 'PE';
+  expiryDate?: number;   // Unix ms — Date.getTime() of expiry
   side: 'buy' | 'sell';
   lots: number;
   qty: number;           // lots * lotSize
@@ -12,7 +16,8 @@ export interface Position {
 
 interface PositionsState {
   positions: Position[];
-  add: (p: Omit<Position, 'id' | 'ts'>) => void;
+  /** Adds a paper position and returns its generated id. */
+  add: (p: Omit<Position, 'id' | 'ts'>) => string;
   remove: (id: string) => void;
   clear: () => void;
 }
@@ -24,7 +29,11 @@ const persist = (p: Position[]) => { try { localStorage.setItem(KEY, JSON.string
 
 export const usePositionsStore = create<PositionsState>((set) => ({
   positions: load(),
-  add: (p) => set((s) => { const arr = [{ ...p, id: `o${seq++}_${Date.now()}`, ts: Date.now() }, ...s.positions]; persist(arr); return { positions: arr }; }),
+  add: (p) => {
+    const id = `o${seq++}_${Date.now()}`;
+    set((s) => { const arr = [{ ...p, id, ts: Date.now() }, ...s.positions]; persist(arr); return { positions: arr }; });
+    return id;
+  },
   remove: (id) => set((s) => { const arr = s.positions.filter((x) => x.id !== id); persist(arr); return { positions: arr }; }),
   clear: () => set(() => { persist([]); return { positions: [] }; }),
 }));

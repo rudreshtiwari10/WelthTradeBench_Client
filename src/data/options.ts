@@ -2,8 +2,10 @@
 // Real option chains aren't in the backend, so strikes/premia are generated
 // around the live spot — realistic enough for a working buy/sell flow.
 
+// Lot sizes per NSE/BSE F&O contract specifications (updated May 2025).
+// NIFTY: 75→65, BANKNIFTY: 30, FINNIFTY: 65, MIDCPNIFTY: 120, SENSEX: 20, BANKEX: 30.
 const LOT_SIZE: Record<string, number> = {
-  NIFTY: 75, BANKNIFTY: 30, FINNIFTY: 65, MIDCPNIFTY: 120, SENSEX: 20, BANKEX: 30,
+  NIFTY: 65, BANKNIFTY: 30, FINNIFTY: 65, MIDCPNIFTY: 120, SENSEX: 20, BANKEX: 30,
 };
 
 export function lotSize(symbol: string): number {

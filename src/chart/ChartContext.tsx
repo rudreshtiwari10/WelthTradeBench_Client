@@ -6,6 +6,8 @@ export interface ChartApi {
   chartRef: MutableRefObject<IChartApi | null>;
   seriesRef: MutableRefObject<ISeriesApi<SeriesType> | null>;
   candlesRef: MutableRefObject<Candle[]>;
+  /** The `.chart-canvas` div — used by PositionLines for coordinate conversion. */
+  containerRef: MutableRefObject<HTMLDivElement | null>;
   ready: boolean;
 }
 
