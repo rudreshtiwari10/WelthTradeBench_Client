@@ -174,7 +174,7 @@ export function TopToolbar() {
         {/* Data source / Upstox login */}
         <a
           className={`data-pill ${mode}`}
-          href={creds ? '/auth/login' : undefined}
+          href={creds ? `${import.meta.env.VITE_API_URL || ''}/auth/login` : undefined}
           title={mode === 'upstox' ? 'Live Upstox data' : creds ? 'Connect Upstox (login)' : 'Mock data — add Upstox credentials in server/.env'}
         >
           <span className="data-dot" />
