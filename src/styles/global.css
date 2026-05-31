@@ -1,0 +1,105 @@
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Reusable square icon button (toolbars). */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.icon-btn.active {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+/* TV-style text+icon pill button used across the top toolbar. */
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.pill-btn:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.pill-btn.strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+  flex: none;
+}
+
+.up {
+  color: var(--up-text);
+}
+.down {
+  color: var(--down-text);
+}
+
+/* Thin custom scrollbars matching TV. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #363a45;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4e59;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

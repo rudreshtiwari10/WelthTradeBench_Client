@@ -1,0 +1,132 @@
+.topbar {
+  height: var(--topbar-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.symbol-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px 0 6px;
+  border-radius: var(--radius);
+  color: var(--text-strong);
+  font-weight: 700;
+  font-size: var(--fs-lg);
+  transition: background 0.12s ease;
+}
+.symbol-btn:hover {
+  background: var(--hover);
+}
+
+.symbol-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f7931a, #e8820f);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.add-symbol {
+  width: 30px;
+  height: 30px;
+}
+
+.layout-name {
+  color: var(--text);
+}
+
+.layout-name-input {
+  height: 28px;
+  width: 92px;
+  padding: 0 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-md);
+}
+.layout-name-input:hover { background: var(--hover); }
+.layout-name-input:focus {
+  outline: none;
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.icon-btn:disabled:hover { background: none; color: var(--text-muted); }
+
+.pill-btn.outlined {
+  border: 1px solid var(--border-strong);
+  height: 28px;
+}
+
+.publish-btn {
+  height: 28px;
+  padding: 0 14px;
+  margin-left: 4px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: var(--fs-md);
+  transition: background 0.12s ease;
+}
+.publish-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* Data-source indicator / Upstox connect */
+.data-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  border: 1px solid var(--border-strong);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.data-pill:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.data-pill .data-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.data-pill.upstox {
+  color: var(--up);
+  border-color: rgba(38, 166, 154, 0.4);
+}
+.data-pill.upstox .data-dot {
+  background: var(--up);
+  box-shadow: 0 0 6px var(--up);
+}

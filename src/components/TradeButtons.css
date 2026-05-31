@@ -1,0 +1,27 @@
+.trade-buttons {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  gap: 1px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.tb-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: 3px 10px;
+  color: #fff;
+  line-height: 1.1;
+}
+.tb-btn.sell { background: var(--down); }
+.tb-btn.buy { background: var(--up); }
+.tb-btn:hover { filter: brightness(1.1); }
+.tb-label { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
+.tb-price { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }

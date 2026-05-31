@@ -1,0 +1,57 @@
+.opt-ticket {
+  width: 380px;
+  max-width: 92vw;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.ot-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+}
+.ot-title { font-weight: 600; color: var(--text-strong); }
+
+.ot-side { display: flex; gap: 8px; padding: 12px 14px 4px; }
+.ot-sidebtn {
+  flex: 1; height: 34px; border-radius: var(--radius); font-weight: 700;
+  border: 1px solid var(--border-strong); color: var(--text-muted);
+}
+.ot-sidebtn.buy.on { background: var(--up); color: #fff; border-color: var(--up); }
+.ot-sidebtn.sell.on { background: var(--down); color: #fff; border-color: var(--down); }
+
+.ot-body { padding: 8px 14px 4px; }
+.ot-field {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 38px; gap: 10px;
+}
+.ot-field > span { color: var(--text-muted); font-size: var(--fs-md); }
+.ot-field select, .ot-field input {
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  color: var(--text-strong); padding: 6px 8px; font-family: inherit; font-size: var(--fs-md); min-width: 130px;
+}
+.ot-toggle { display: flex; gap: 2px; }
+.ot-toggle button {
+  padding: 6px 10px; border: 1px solid var(--border-strong); color: var(--text-muted); font-size: var(--fs-sm);
+}
+.ot-toggle button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.ot-toggle button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.ot-toggle button.on { background: var(--hover); color: var(--accent); }
+
+.ot-summary {
+  margin-top: 8px; padding: 10px; background: var(--bg); border-radius: var(--radius); font-size: var(--fs-sm);
+}
+.ot-summary div { display: flex; justify-content: space-between; padding: 2px 0; }
+.ot-summary span { color: var(--text-muted); }
+.ot-summary b { color: var(--text-strong); }
+
+.ot-place {
+  display: block; width: calc(100% - 28px); margin: 12px 14px 6px; height: 40px;
+  border-radius: var(--radius); font-weight: 700; color: #fff; font-size: var(--fs-lg);
+}
+.ot-place.buy { background: var(--up); }
+.ot-place.sell { background: var(--down); }
+.ot-place:hover { filter: brightness(1.08); }
+.ot-place:disabled { background: var(--border-strong); color: var(--text-muted); cursor: default; filter: none; }
+.ot-note { text-align: center; color: var(--text-dim); font-size: var(--fs-xs); padding-bottom: 12px; }

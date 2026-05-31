@@ -1,0 +1,46 @@
+.settings-dialog {
+  width: 420px;
+  max-width: 92vw;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.sd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.sd-title { font-size: var(--fs-lg); font-weight: 600; color: var(--text-strong); }
+.sd-body { padding: 8px 14px 14px; max-height: 60vh; overflow-y: auto; }
+.sd-section {
+  margin: 12px 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.sd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+}
+.sd-label { color: var(--text); font-size: var(--fs-md); }
+.sd-color {
+  width: 40px; height: 24px; padding: 0; border: 1px solid var(--border-strong);
+  border-radius: 4px; background: none; cursor: pointer;
+}
+.sd-check { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.sd-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 14px; border-top: 1px solid var(--border);
+}
+.sd-btn { height: 30px; padding: 0 16px; border-radius: var(--radius); font-size: var(--fs-md); }
+.sd-btn.ghost { color: var(--text); border: 1px solid var(--border-strong); }
+.sd-btn.ghost:hover { background: var(--hover); }
+.sd-btn.primary { background: var(--accent); color: #fff; font-weight: 600; }
+.sd-btn.primary:hover { background: var(--accent-hover); }

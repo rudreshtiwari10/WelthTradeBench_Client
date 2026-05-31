@@ -1,0 +1,127 @@
+.leftbar {
+  width: var(--leftbar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
+  background: var(--toolbar);
+  position: relative;
+  z-index: 60;            /* keep flyouts above the chart */
+  overflow: visible;      /* flyouts must escape the rail, not be clipped */
+}
+.leftbar.collapsed {
+  padding-top: 6px;
+}
+
+.leftbar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.leftbar-spacer {
+  flex: 1;
+}
+
+.tool-btn {
+  position: relative;
+}
+
+/* Small triangle in the bottom-right indicating a flyout of variants. */
+.flyout-caret {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 4px 4px;
+  border-color: transparent transparent var(--text-dim) transparent;
+}
+.tool-btn:hover .flyout-caret {
+  border-bottom-color: var(--text-muted);
+}
+
+.tool-group {
+  position: relative;
+  display: flex;
+}
+
+.tool-flyout {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  z-index: 200;
+  min-width: 248px;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.flyout-section-title {
+  padding: 9px 10px 4px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+}
+.flyout-item:hover {
+  background: var(--hover);
+}
+.flyout-item.active {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.flyout-item.active .fi-icon {
+  color: var(--accent);
+}
+.fi-icon {
+  display: inline-flex;
+  width: 22px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.fi-label {
+  flex: 1;
+  font-size: var(--fs-md);
+}
+.fi-shortcut {
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.emoji-flyout {
+  min-width: 260px;
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 2px;
+}
+.emoji-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 18px;
+  border-radius: var(--radius);
+}
+.emoji-cell:hover {
+  background: var(--hover);
+}

@@ -1,0 +1,83 @@
+.draw-props {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.dp-colors {
+  display: flex;
+  gap: 3px;
+}
+.dp-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+}
+.dp-swatch.active {
+  border-color: var(--text-strong);
+}
+
+.dp-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+.dp-group {
+  display: flex;
+  gap: 2px;
+}
+.dp-width {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+}
+.dp-width span {
+  width: 16px;
+  background: var(--text);
+  border-radius: 2px;
+}
+.dp-width:hover,
+.dp-style:hover,
+.dp-btn:hover {
+  background: var(--hover);
+}
+.dp-width.active,
+.dp-style.active {
+  background: var(--hover);
+  color: var(--accent);
+}
+.dp-style {
+  min-width: 30px;
+  height: 26px;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+}
+.dp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.dp-btn.danger:hover {
+  color: var(--down);
+}
