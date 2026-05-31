@@ -1,5 +1,8 @@
 import type { Candle, Interval, SymbolInfo } from './types';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+
 export interface HistoryResponse {
   symbol: string;
   interval: Interval;
@@ -18,7 +21,7 @@ export interface SearchResult {
 export async function fetchHistory(
   symbol: string, interval: Interval, count = 600, instrumentKey?: string
 ): Promise<HistoryResponse> {
-  let url = `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
+  let url = `${API_BASE}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
   if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`history ${r.status}`);
@@ -26,19 +29,20 @@ export async function fetchHistory(
 }
 
 export async function searchSymbols(q: string): Promise<SearchResult[]> {
-  const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const r = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
   if (!r.ok) return [];
   return (await r.json()).results;
 }
 
 export async function authStatus(): Promise<{ credentialsPresent: boolean; authenticated: boolean; mode: 'upstox' | 'mock' }> {
   try {
-    const r = await fetch('/api/auth/status');
+    const r = await fetch(`${API_BASE}/api/auth/status`);
     return await r.json();
   } catch {
     return { credentialsPresent: false, authenticated: false, mode: 'mock' };
   }
 }
+
 
 export interface Tick {
   type: 'tick';
@@ -64,8 +68,18 @@ class LiveFeed {
 
   private connect() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    this.ws = new WebSocket(`${proto}://${location.host}/ws`);
+    
+    let wsUrl: string;
+    if (import.meta.env.VITE_API_URL) {
+      // Convert http/https from VITE_API_URL into ws/wss
+      wsUrl = import.meta.env.VITE_API_URL.replace(/^http/, 'ws') + '/ws';
+    } else {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      wsUrl = `${proto}://${location.host}/ws`;
+    }
+    
+    this.ws = new WebSocket(wsUrl);
+
 
     this.ws.onopen = () => {
       this.ready = true;
@@ -152,7 +166,7 @@ export async function fetchDerivativesChain(
   underlying: string, expiry: string
 ): Promise<{ source: string; spot: number; chains: DerivChainRow[] }> {
   const r = await fetch(
-    `/api/derivatives/chain?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}`
+    `${API_BASE}/api/derivatives/chain?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}`
   );
   if (!r.ok) throw new Error(`derivatives/chain ${r.status}`);
   return r.json();
@@ -161,7 +175,7 @@ export async function fetchDerivativesChain(
 export async function fetchFutures(
   underlying: string
 ): Promise<{ source: string; futures: FutureRow[] }> {
-  const r = await fetch(`/api/derivatives/futures?underlying=${encodeURIComponent(underlying)}`);
+  const r = await fetch(`${API_BASE}/api/derivatives/futures?underlying=${encodeURIComponent(underlying)}`);
   if (!r.ok) throw new Error(`derivatives/futures ${r.status}`);
   return r.json();
 }

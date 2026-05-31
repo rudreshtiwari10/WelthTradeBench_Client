@@ -5,6 +5,8 @@
  * returns empty/paper scaffolds so the UI can stay in paper mode seamlessly.
  */
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export interface BrokerStatus {
@@ -106,31 +108,31 @@ export interface PlaceOrderResult {
 // ─── API calls ────────────────────────────────────────────────────────────
 
 export async function fetchBrokerStatus(): Promise<BrokerStatus> {
-  const r = await fetch('/api/broker/status');
+  const r = await fetch(`${API_BASE}/api/broker/status`);
   if (!r.ok) throw new Error(`broker/status ${r.status}`);
   return r.json();
 }
 
 export async function fetchBrokerFunds(): Promise<BrokerFunds> {
-  const r = await fetch('/api/broker/funds');
+  const r = await fetch(`${API_BASE}/api/broker/funds`);
   if (!r.ok) throw new Error(`broker/funds ${r.status}`);
   return r.json();
 }
 
 export async function fetchBrokerPositions(): Promise<{ source: string; sandbox: boolean; positions: BrokerPosition[] }> {
-  const r = await fetch('/api/broker/positions');
+  const r = await fetch(`${API_BASE}/api/broker/positions`);
   if (!r.ok) throw new Error(`broker/positions ${r.status}`);
   return r.json();
 }
 
 export async function fetchBrokerOrders(): Promise<{ source: string; sandbox: boolean; orders: BrokerOrder[] }> {
-  const r = await fetch('/api/broker/orders');
+  const r = await fetch(`${API_BASE}/api/broker/orders`);
   if (!r.ok) throw new Error(`broker/orders ${r.status}`);
   return r.json();
 }
 
 export async function placeBrokerOrder(params: PlaceOrderParams): Promise<PlaceOrderResult> {
-  const r = await fetch('/api/broker/order', {
+  const r = await fetch(`${API_BASE}/api/broker/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -151,7 +153,7 @@ export async function placeBrokerOrder(params: PlaceOrderParams): Promise<PlaceO
 }
 
 export async function cancelBrokerOrder(orderId: string): Promise<{ source: string }> {
-  const r = await fetch(`/api/broker/order/${encodeURIComponent(orderId)}`, { method: 'DELETE' });
+  const r = await fetch(`${API_BASE}/api/broker/order/${encodeURIComponent(orderId)}`, { method: 'DELETE' });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(err.detail ?? `cancel ${r.status}`);
@@ -164,7 +166,7 @@ export async function fetchOptionChain(
   expiry: string,
 ): Promise<{ source: string; sandbox: boolean; chains: OptionChainRow[] }> {
   const r = await fetch(
-    `/api/broker/option-chain?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}`,
+    `${API_BASE}/api/broker/option-chain?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}`,
   );
   if (!r.ok) throw new Error(`option-chain ${r.status}`);
   return r.json();
