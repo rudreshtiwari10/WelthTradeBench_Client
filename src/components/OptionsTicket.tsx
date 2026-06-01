@@ -155,20 +155,29 @@ export function OptionsTicket() {
         pushToast(
           `${label}${side === 'buy' ? 'Bought' : 'Sold'} ${lots} lot${lots > 1 ? 's' : ''} ${contract} @ ₹${price.toFixed(2)}${result.order_id ? ` · Order ${result.order_id}` : ''}`
         );
-        // Mark entry + auto-set default SL/TP on chart
         addPriceLines({
           positionId: posId,
           symbol: contract,
           underlying: symbol,
           side,
           qty,
+          lots,
           price,
           entryPrice: price,
           instrumentKey: instrumentKey ?? undefined,
         });
         close();
       } catch (e) {
-        pushToast(`Order failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        const raw = e instanceof Error ? e.message : 'Unknown error';
+        // Surface specific Upstox reasons so the user knows exactly what went wrong.
+        const hint = /margin|fund|insufficient/i.test(raw)
+          ? ' — insufficient margin'
+          : /market.*close|after.*hour|pre.*open/i.test(raw)
+            ? ' — market is closed'
+            : /invalid.*instrument|instrument.*not/i.test(raw)
+              ? ' — invalid instrument'
+              : '';
+        pushToast(`Order failed: ${raw}${hint}`);
       } finally {
         setPlacing(false);
       }
@@ -190,6 +199,7 @@ export function OptionsTicket() {
         underlying: symbol,
         side,
         qty,
+        lots,
         price,
         entryPrice: price,
       });

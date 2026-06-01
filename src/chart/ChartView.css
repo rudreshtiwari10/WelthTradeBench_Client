@@ -23,21 +23,23 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);   /* 16px — matches TV */
 }
 .chart-view .legend-symbol {
   color: var(--text-strong);
-  font-weight: 600;
+  font-weight: 700;
+  font-size: var(--fs-lg);
 }
 .chart-view .legend-dot,
 .chart-view .legend-meta {
   color: var(--text-muted);
+  font-size: var(--fs-md);
 }
 .chart-view .legend-ohlc {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-left: 6px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);   /* 14px — matches TV OHLC row */
 }
 .chart-view .legend-ohlc span {
   color: var(--text-muted);
@@ -104,7 +106,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 7px 14px;
+  padding: 8px 16px;
   font-size: var(--fs-md);
   color: var(--text);
 }

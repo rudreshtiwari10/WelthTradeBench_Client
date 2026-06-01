@@ -33,7 +33,13 @@ export type DrawingType =
   | 'longpos'
   | 'shortpos'
   | 'measure'
-  | 'pricerange';
+  | 'pricerange'
+  // ── Elliott Wave dedicated types ─────────────────────────────────────
+  | 'ew_impulse'    // 1-2-3-4-5  (6 points: 0→1→2→3→4→5)
+  | 'ew_correction' // A-B-C      (4 points: 0→A→B→C)
+  | 'ew_triangle'   // A-B-C-D-E  (6 points: 0→A→B→C→D→E)
+  | 'ew_double'     // W-X-Y      (4 points: 0→W→X→Y)
+  | 'ew_triple';    // W-X-Y-X-Z  (6 points: 0→W→X→Y→X2→Z)
 
 export interface DStyle {
   color: string;
@@ -52,6 +58,8 @@ export interface Drawing {
   style: DStyle;
   text?: string;
   locked?: boolean;
+  hidden?: boolean;   // per-drawing visibility toggle
+  name?: string;      // user-assigned label (replaces type label in ObjectTree)
 }
 
 // How many anchor points each tool needs before it's complete.
@@ -62,6 +70,21 @@ export const POINT_COUNT: Record<DrawingType, number> = {
   hline: 1, hray: 1, vline: 1, text: 1, flag: 1, pricelabel: 1, emoji: 1,
   brush: -1,    // freehand: ends on pointer-up
   polyline: -2, // multi-point: ends on double-click
+  // Elliott Wave — fixed point counts (auto-finish when reached)
+  ew_impulse:    6,  // start + 5 wave-end points
+  ew_correction: 4,  // start + A + B + C
+  ew_triangle:   6,  // start + A + B + C + D + E
+  ew_double:     4,  // start + W + X + Y
+  ew_triple:     6,  // start + W + X + Y + X2 + Z
+};
+
+// Wave labels per Elliott type
+export const EW_LABELS: Record<string, string[]> = {
+  ew_impulse:    ['0', '1', '2', '3', '4', '5'],
+  ew_correction: ['0', 'A', 'B', 'C'],
+  ew_triangle:   ['0', 'A', 'B', 'C', 'D', 'E'],
+  ew_double:     ['0', 'W', 'X', 'Y'],
+  ew_triple:     ['0', 'W', 'X', 'Y', 'X', 'Z'],
 };
 
 export const DEFAULT_STYLE: DStyle = {

@@ -7,6 +7,8 @@ export interface HistoryResponse {
   symbol: string;
   interval: Interval;
   source: 'upstox' | 'mock';
+  /** Set when Upstox was connected but returned no data and we fell back to mock. */
+  source_warning?: string;
   info: SymbolInfo;
   candles: Candle[];
 }
@@ -19,11 +21,15 @@ export interface SearchResult {
 }
 
 export async function fetchHistory(
-  symbol: string, interval: Interval, count = 600, instrumentKey?: string
+  symbol: string,
+  interval: Interval,
+  count = 600,
+  instrumentKey?: string,
+  signal?: AbortSignal,
 ): Promise<HistoryResponse> {
   let url = `${API_BASE}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
   if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
-  const r = await fetch(url);
+  const r = await fetch(url, signal ? { signal } : undefined);
   if (!r.ok) throw new Error(`history ${r.status}`);
   return r.json();
 }
@@ -68,16 +74,23 @@ class LiveFeed {
 
   private connect() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
-    
+
     let wsUrl: string;
-    if (import.meta.env.VITE_API_URL) {
-      // Convert http/https from VITE_API_URL into ws/wss
-      wsUrl = import.meta.env.VITE_API_URL.replace(/^http/, 'ws') + '/ws';
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (apiUrl) {
+      // Convert http/https → ws/wss and append /ws
+      wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws';
     } else {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       wsUrl = `${proto}://${location.host}/ws`;
+      if (location.protocol === 'https:') {
+        // On HTTPS without VITE_API_URL the WS will try to reach the frontend
+        // host which has no /ws endpoint. Set VITE_API_URL in your deployment
+        // environment (Vercel → Settings → Environment Variables).
+        console.warn('[LiveFeed] VITE_API_URL is not set. WebSocket will attempt to connect to the frontend host, which will fail on Vercel/cloud. Set VITE_API_URL=https://your-backend-url in your deployment environment.');
+      }
     }
-    
+
     this.ws = new WebSocket(wsUrl);
 
 

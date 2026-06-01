@@ -1,79 +1,253 @@
 import { create } from 'zustand';
 import { DEFAULT_STYLE, type Drawing, type DrawingType, type DStyle } from '../drawings/types';
+import type { IconName } from '../icons/Icon';
 
 export type Tool = 'cursor' | 'dot' | 'arrowcursor' | 'eraser' | DrawingType;
 
-interface DrawingState {
-  drawings: Drawing[];
-  activeTool: Tool;
-  selectedId: string | null;
-  defaultStyle: DStyle;
-  magnet: boolean;
-  stayInDrawing: boolean;   // keep tool active after finishing a drawing
-  locked: boolean;          // lock all drawings
-  hidden: boolean;          // hide all drawings
-  pendingText: string | null; // preset text/emoji for the next placement
-
-  setTool: (t: Tool, pendingText?: string | null) => void;
-  consumePendingText: () => string | null;
-  addDrawing: (d: Drawing) => void;
-  updateDrawing: (id: string, patch: Partial<Drawing>) => void;
-  removeDrawing: (id: string) => void;
-  select: (id: string | null) => void;
-  clearAll: () => void;
-  setStyle: (id: string, patch: Partial<DStyle>) => void;
-  setDefaultStyle: (patch: Partial<DStyle>) => void;
-  toggleMagnet: () => void;
-  toggleStay: () => void;
-  toggleLocked: () => void;
-  toggleHidden: () => void;
-  loadFor: (key: string) => void;   // load persisted drawings for a symbol+interval
-  setDrawings: (drawings: Drawing[]) => void;  // bulk set (undo/redo, layouts)
+export interface FavDef {
+  label: string;
+  tool: Tool;
+  icon: IconName;
+  text?: string;
 }
 
+export interface StyleTemplate {
+  id: string;
+  name: string;
+  style: DStyle;
+}
+
+// ─── Persistence helpers ──────────────────────────────────────────────────
 let storageKey = 'draw:NIFTY:1D';
 const persist = (drawings: Drawing[]) => {
   try { localStorage.setItem(storageKey, JSON.stringify(drawings)); } catch { /* ignore */ }
 };
 
+const FAV_KEY  = 'welthwest:drawFavorites';
+const TMPL_KEY = 'welthwest:drawTemplates';
+
+const loadFavs = (): FavDef[] => {
+  try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch { return []; }
+};
+const saveFavs = (f: FavDef[]) => {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(f)); } catch { /* */ }
+};
+const loadTmpls = (): StyleTemplate[] => {
+  try { return JSON.parse(localStorage.getItem(TMPL_KEY) || '[]'); } catch { return []; }
+};
+const saveTmpls = (t: StyleTemplate[]) => {
+  try { localStorage.setItem(TMPL_KEY, JSON.stringify(t)); } catch { /* */ }
+};
+
+// ─── State ────────────────────────────────────────────────────────────────
+interface DrawingState {
+  drawings: Drawing[];
+  activeTool: Tool;
+  selectedId: string | null;
+  multiSelected: string[];          // ids of shift-clicked drawings
+  defaultStyle: DStyle;
+  magnet: boolean;
+  stayInDrawing: boolean;
+  locked: boolean;                  // lock ALL drawings globally
+  hidden: boolean;                  // hide ALL drawings globally
+  pendingText: string | null;
+  favorites: FavDef[];
+  templates: StyleTemplate[];
+  clipboard: Drawing | null;
+
+  // ── tool & mode ──────────────────────────────────────────────────────
+  setTool: (t: Tool, pendingText?: string | null) => void;
+  consumePendingText: () => string | null;
+  toggleMagnet: () => void;
+  toggleStay: () => void;
+  toggleLocked: () => void;
+  toggleHidden: () => void;
+
+  // ── drawing CRUD ─────────────────────────────────────────────────────
+  addDrawing: (d: Drawing) => void;
+  updateDrawing: (id: string, patch: Partial<Drawing>) => void;
+  removeDrawing: (id: string) => void;
+  removeMultiSelected: () => void;
+  clearAll: () => void;
+
+  // ── selection ────────────────────────────────────────────────────────
+  select: (id: string | null) => void;
+  addToMultiSelect: (id: string) => void;
+  clearMultiSelect: () => void;
+
+  // ── style ────────────────────────────────────────────────────────────
+  setStyle: (id: string, patch: Partial<DStyle>) => void;
+  setDefaultStyle: (patch: Partial<DStyle>) => void;
+
+  // ── per-drawing operations ────────────────────────────────────────────
+  toggleHideDrawing: (id: string) => void;
+  renameDrawing: (id: string, name: string) => void;
+  bringToFront: (id: string) => void;
+  sendToBack: (id: string) => void;
+  duplicateDrawing: (id: string) => void;
+
+  // ── copy / paste ─────────────────────────────────────────────────────
+  copySelected: () => void;
+  paste: () => void;
+
+  // ── favorites ────────────────────────────────────────────────────────
+  toggleFavorite: (def: FavDef) => void;
+  isFavorite: (label: string) => boolean;
+  /** Bulk-replace favorites (used for drag-to-reorder). */
+  setFavorites: (favs: FavDef[]) => void;
+
+  // ── templates ────────────────────────────────────────────────────────
+  saveTemplate: (name: string) => void;          // saves current defaultStyle
+  applyTemplate: (id: string) => void;           // apply to selected drawing
+  deleteTemplate: (id: string) => void;
+
+  // ── persistence ──────────────────────────────────────────────────────
+  loadFor: (key: string) => void;
+  setDrawings: (drawings: Drawing[]) => void;
+}
+
+let idSeq = 1;
+const newId = () => `d${Date.now()}_${idSeq++}`;
+const tmplId = () => `tmpl_${Date.now()}`;
+
 export const useDrawingStore = create<DrawingState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor',
   selectedId: null,
+  multiSelected: [],
   defaultStyle: { ...DEFAULT_STYLE },
   magnet: false,
   stayInDrawing: false,
   locked: false,
   hidden: false,
   pendingText: null,
+  favorites: loadFavs(),
+  templates: loadTmpls(),
+  clipboard: null,
 
-  setTool: (t, pendingText = null) => set({ activeTool: t, pendingText, selectedId: t === 'cursor' ? get().selectedId : null }),
+  // ── tool & mode ──────────────────────────────────────────────────────
+  setTool: (t, pendingText = null) =>
+    set({ activeTool: t, pendingText, selectedId: t === 'cursor' ? get().selectedId : null }),
   consumePendingText: () => { const t = get().pendingText; set({ pendingText: null }); return t; },
-  addDrawing: (d) => set((s) => { const arr = [...s.drawings, d]; persist(arr); return { drawings: arr, selectedId: d.id }; }),
-  updateDrawing: (id, patch) => set((s) => {
-    const arr = s.drawings.map((d) => (d.id === id ? { ...d, ...patch } : d));
-    persist(arr); return { drawings: arr };
-  }),
-  removeDrawing: (id) => set((s) => {
-    const arr = s.drawings.filter((d) => d.id !== id);
-    persist(arr); return { drawings: arr, selectedId: s.selectedId === id ? null : s.selectedId };
-  }),
-  select: (id) => set({ selectedId: id }),
-  clearAll: () => set(() => { persist([]); return { drawings: [], selectedId: null }; }),
-  setStyle: (id, patch) => set((s) => {
-    const arr = s.drawings.map((d) => (d.id === id ? { ...d, style: { ...d.style, ...patch } } : d));
-    persist(arr); return { drawings: arr };
-  }),
-  setDefaultStyle: (patch) => set((s) => ({ defaultStyle: { ...s.defaultStyle, ...patch } })),
   toggleMagnet: () => set((s) => ({ magnet: !s.magnet })),
-  toggleStay: () => set((s) => ({ stayInDrawing: !s.stayInDrawing })),
+  toggleStay:   () => set((s) => ({ stayInDrawing: !s.stayInDrawing })),
   toggleLocked: () => set((s) => ({ locked: !s.locked })),
   toggleHidden: () => set((s) => ({ hidden: !s.hidden })),
+
+  // ── drawing CRUD ─────────────────────────────────────────────────────
+  addDrawing: (d) =>
+    set((s) => { const arr = [...s.drawings, d]; persist(arr); return { drawings: arr, selectedId: d.id }; }),
+
+  updateDrawing: (id, patch) =>
+    set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, ...patch } : d)); persist(arr); return { drawings: arr }; }),
+
+  removeDrawing: (id) =>
+    set((s) => {
+      const arr = s.drawings.filter((d) => d.id !== id);
+      persist(arr);
+      return { drawings: arr, selectedId: s.selectedId === id ? null : s.selectedId };
+    }),
+
+  removeMultiSelected: () =>
+    set((s) => {
+      const ids = new Set([...s.multiSelected, ...(s.selectedId ? [s.selectedId] : [])]);
+      const arr = s.drawings.filter((d) => !ids.has(d.id));
+      persist(arr);
+      return { drawings: arr, selectedId: null, multiSelected: [] };
+    }),
+
+  clearAll: () => set(() => { persist([]); return { drawings: [], selectedId: null, multiSelected: [] }; }),
+
+  // ── selection ────────────────────────────────────────────────────────
+  select: (id) => set({ selectedId: id }),
+  addToMultiSelect: (id) =>
+    set((s) => ({ multiSelected: s.multiSelected.includes(id) ? s.multiSelected.filter((x) => x !== id) : [...s.multiSelected, id] })),
+  clearMultiSelect: () => set({ multiSelected: [] }),
+
+  // ── style ────────────────────────────────────────────────────────────
+  setStyle: (id, patch) =>
+    set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, style: { ...d.style, ...patch } } : d)); persist(arr); return { drawings: arr }; }),
+  setDefaultStyle: (patch) => set((s) => ({ defaultStyle: { ...s.defaultStyle, ...patch } })),
+
+  // ── per-drawing operations ────────────────────────────────────────────
+  toggleHideDrawing: (id) =>
+    set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, hidden: !d.hidden } : d)); persist(arr); return { drawings: arr }; }),
+
+  renameDrawing: (id, name) =>
+    set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, name } : d)); persist(arr); return { drawings: arr }; }),
+
+  bringToFront: (id) =>
+    set((s) => { const d = s.drawings.find((x) => x.id === id); if (!d) return {}; const arr = [...s.drawings.filter((x) => x.id !== id), d]; persist(arr); return { drawings: arr }; }),
+
+  sendToBack: (id) =>
+    set((s) => { const d = s.drawings.find((x) => x.id === id); if (!d) return {}; const arr = [d, ...s.drawings.filter((x) => x.id !== id)]; persist(arr); return { drawings: arr }; }),
+
+  duplicateDrawing: (id) => {
+    const d = get().drawings.find((x) => x.id === id);
+    if (!d) return;
+    const copy: Drawing = {
+      ...d,
+      id: newId(),
+      points: d.points.map((p) => ({ logical: p.logical + 3, price: p.price })),
+      name: d.name ? `${d.name} copy` : undefined,
+    };
+    set((s) => { const arr = [...s.drawings, copy]; persist(arr); return { drawings: arr, selectedId: copy.id }; });
+  },
+
+  // ── copy / paste ─────────────────────────────────────────────────────
+  copySelected: () => {
+    const id = get().selectedId;
+    if (!id) return;
+    const d = get().drawings.find((x) => x.id === id);
+    if (d) set({ clipboard: { ...d, points: d.points.map((p) => ({ ...p })) } });
+  },
+
+  paste: () => {
+    const cb = get().clipboard;
+    if (!cb) return;
+    const copy: Drawing = {
+      ...cb,
+      id: newId(),
+      points: cb.points.map((p) => ({ logical: p.logical + 3, price: p.price * 1.001 })),
+      locked: false,
+    };
+    set((s) => { const arr = [...s.drawings, copy]; persist(arr); return { drawings: arr, selectedId: copy.id }; });
+  },
+
+  // ── favorites ────────────────────────────────────────────────────────
+  toggleFavorite: (def) =>
+    set((s) => {
+      const exists = s.favorites.some((f) => f.label === def.label);
+      const favs = exists ? s.favorites.filter((f) => f.label !== def.label) : [...s.favorites, def];
+      saveFavs(favs);
+      return { favorites: favs };
+    }),
+  isFavorite: (label) => get().favorites.some((f) => f.label === label),
+  setFavorites: (favs) => { saveFavs(favs); set({ favorites: favs }); },
+
+  // ── templates ────────────────────────────────────────────────────────
+  saveTemplate: (name) => {
+    const style = { ...get().defaultStyle };
+    const t: StyleTemplate = { id: tmplId(), name, style };
+    set((s) => { const arr = [...s.templates, t]; saveTmpls(arr); return { templates: arr }; });
+  },
+
+  applyTemplate: (templateId) => {
+    const t = get().templates.find((x) => x.id === templateId);
+    const id = get().selectedId;
+    if (!t || !id) return;
+    get().setStyle(id, t.style);
+  },
+
+  deleteTemplate: (id) =>
+    set((s) => { const arr = s.templates.filter((t) => t.id !== id); saveTmpls(arr); return { templates: arr }; }),
+
+  // ── persistence ──────────────────────────────────────────────────────
   loadFor: (key) => {
     storageKey = `draw:${key}`;
     let arr: Drawing[] = [];
     try { arr = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch { arr = []; }
-    set({ drawings: arr, selectedId: null });
+    set({ drawings: arr, selectedId: null, multiSelected: [] });
   },
-  setDrawings: (drawings) => { persist(drawings); set({ drawings, selectedId: null }); },
+  setDrawings: (drawings) => { persist(drawings); set({ drawings, selectedId: null, multiSelected: [] }); },
 }));

@@ -6,6 +6,8 @@ import { BottomBar } from './components/BottomBar';
 import { IndicatorsDialog } from './components/IndicatorsDialog';
 import { ChartSettingsDialog } from './components/ChartSettingsDialog';
 import { OptionsTicket } from './components/OptionsTicket';
+import { OptionsChainPanel } from './components/OptionsChainPanel';
+import { SymbolSearch } from './components/SymbolSearch';
 import { ToastHost } from './components/Toast';
 import { Icon } from './icons/Icon';
 import { useShortcuts } from './hooks/useShortcuts';
@@ -18,9 +20,13 @@ initHistoryTracking();
 
 export default function App() {
   useShortcuts();
-  const theme = useUiStore((s) => s.theme);
-  const chartOnly = useUiStore((s) => s.chartOnly);
+  const theme      = useUiStore((s) => s.theme);
+  const chartOnly  = useUiStore((s) => s.chartOnly);
   const setChartOnly = useUiStore((s) => s.setChartOnly);
+  const chainOpen  = useUiStore((s) => s.chainOpen);
+  const searchOpen         = useUiStore((s) => s.searchOpen);
+  const searchInitialQuery = useUiStore((s) => s.searchInitialQuery);
+  const closeSearch        = useUiStore((s) => s.closeSearch);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
@@ -63,6 +69,8 @@ export default function App() {
       <IndicatorsDialog />
       <ChartSettingsDialog />
       <OptionsTicket />
+      {chainOpen && <OptionsChainPanel />}
+      {searchOpen && <SymbolSearch onClose={closeSearch} initialQuery={searchInitialQuery} />}
       <ToastHost />
     </div>
   );

@@ -10,6 +10,7 @@
   flex: 1;
   display: flex;
   min-height: 0;
+  /* Right panel animates its own width; the chart area just flexes to fill */
 }
 
 .app-center {

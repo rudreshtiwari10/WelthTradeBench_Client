@@ -1,0 +1,288 @@
+/* ── Options Chain Panel ─────────────────────────────────────────────────── */
+
+.ocp-panel {
+  position: fixed;
+  bottom: 52px;   /* above BottomBar */
+  left: 64px;     /* beside LeftToolbar */
+  width: 420px;
+  max-height: 520px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  user-select: none;
+}
+
+/* ── Header ── */
+.ocp-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ocp-ul-chips {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.ocp-ul-btn {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ocp-ul-btn:hover { background: var(--hover); color: var(--text); }
+.ocp-ul-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ocp-hdr-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ocp-spot {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.ocp-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.ocp-close:hover { color: var(--text); }
+
+/* ── Controls ── */
+.ocp-controls {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.ocp-expiry-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ocp-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ocp-chip:hover { background: var(--hover); color: var(--text); }
+.ocp-chip.active {
+  background: rgba(41, 98, 255, 0.18);
+  border-color: #2962ff;
+  color: #2962ff;
+}
+.ocp-trade-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ocp-side-toggle {
+  display: flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.ocp-side-btn {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.ocp-side-btn.buy.on  { background: rgba(38,166,154,0.85); color: #fff; }
+.ocp-side-btn.sell.on { background: rgba(239,83,80,0.85);  color: #fff; }
+.ocp-side-btn:not(.on):hover { background: var(--hover); color: var(--text); }
+
+.ocp-lots-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ocp-lots-label { font-size: 11px; color: var(--text-muted); }
+.ocp-lots-input {
+  width: 44px;
+  background: var(--input-bg, var(--hover));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 2px 4px;
+  -moz-appearance: textfield;
+}
+.ocp-lots-input::-webkit-inner-spin-button { display: none; }
+.ocp-qty-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ── Chain table ── */
+.ocp-chain-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.ocp-chain-head {
+  display: grid;
+  grid-template-columns: 1fr 80px 1fr;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ocp-chain-head span:first-child { text-align: left; }
+.ocp-chain-head span:last-child  { text-align: right; }
+.ocp-chain-head span:nth-child(2){ text-align: center; }
+
+.ocp-chain-body {
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+}
+.ocp-chain-body::-webkit-scrollbar { width: 4px; }
+.ocp-chain-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.ocp-chain-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 1fr;
+  border-bottom: 1px solid var(--border);
+  align-items: stretch;
+  min-height: 30px;
+}
+.ocp-chain-row.atm { background: rgba(41, 98, 255, 0.06); }
+.ocp-chain-row.atm:hover { background: rgba(41, 98, 255, 0.12); }
+
+/* CE cell */
+.ocp-ce-cell,
+.ocp-pe-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text);
+  transition: background 0.1s;
+}
+.ocp-ce-cell { justify-content: flex-start; border-right: 1px solid var(--border); }
+.ocp-pe-cell { justify-content: flex-end;   border-left:  1px solid var(--border); }
+
+.ocp-ce-cell.itm,
+.ocp-pe-cell.itm {
+  background: rgba(38, 166, 154, 0.06);
+}
+.ocp-ce-cell.buy:hover,
+.ocp-pe-cell.buy:hover  { background: rgba(38, 166, 154, 0.18); }
+.ocp-ce-cell.sell:hover,
+.ocp-pe-cell.sell:hover { background: rgba(239, 83, 80, 0.18); }
+.ocp-ce-cell:disabled,
+.ocp-pe-cell:disabled   { opacity: 0.45; cursor: not-allowed; }
+
+.ocp-ltp {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ocp-oi {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.ocp-placing {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Strike column */
+.ocp-strike {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.ocp-strike.atm { color: #2962ff; font-weight: 800; }
+.ocp-atm-tag {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #2962ff;
+  background: rgba(41, 98, 255, 0.15);
+  border-radius: 2px;
+  padding: 0 3px;
+}
+
+/* Empty / loading */
+.ocp-empty {
+  text-align: center;
+  padding: 24px 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+/* ── Footer ── */
+.ocp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.ocp-refresh {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.ocp-refresh:hover { color: var(--text); transform: rotate(90deg); }

@@ -98,11 +98,11 @@ export const TOOL_GROUPS: ToolGroup[] = [
         { tool: 'polyline', icon: 'pattern', label: 'Three Drives Pattern' },
       ] },
       { title: 'Elliott Waves', tools: [
-        { tool: 'polyline', icon: 'pattern', label: 'Elliott Impulse Wave (1-2-3-4-5)' },
-        { tool: 'polyline', icon: 'pattern', label: 'Elliott Correction Wave (A-B-C)' },
-        { tool: 'polyline', icon: 'pattern', label: 'Elliott Triangle Wave (A-B-C-D-E)' },
-        { tool: 'polyline', icon: 'pattern', label: 'Elliott Double Combo (W-X-Y)' },
-        { tool: 'polyline', icon: 'pattern', label: 'Elliott Triple Combo (W-X-Y-X-Z)' },
+        { tool: 'ew_impulse',    icon: 'pattern', label: 'Elliott Impulse Wave (1-2-3-4-5)', shortcut: '' },
+        { tool: 'ew_correction', icon: 'pattern', label: 'Elliott Correction Wave (A-B-C)' },
+        { tool: 'ew_triangle',   icon: 'pattern', label: 'Elliott Triangle Wave (A-B-C-D-E)' },
+        { tool: 'ew_double',     icon: 'pattern', label: 'Elliott Double Combo (W-X-Y)' },
+        { tool: 'ew_triple',     icon: 'pattern', label: 'Elliott Triple Combo (W-X-Y-X-Z)' },
       ] },
       { title: 'Cycles', tools: [
         { tool: 'polyline', icon: 'line', label: 'Cyclic Lines' },

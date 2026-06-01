@@ -1,14 +1,11 @@
 /**
  * PositionLines — chart overlay that:
- *
- *  1. Renders a lightweight-charts priceLine for each entry / SL / TP line.
- *  2. Renders draggable HTML handles for SL and TP (drag up/down to adjust price).
- *  3. Monitors the live tick feed and auto-triggers a close order when the
- *     underlying spot crosses an SL or TP line.
- *
- * The component is mounted inside ChartView and has access to the chart/series
- * refs through ChartContext.  It reads the current chart symbol from
- * chartStore and only shows lines whose `underlying` matches that symbol.
+ *  1. Renders lightweight-charts price lines for entry / SL / TP.
+ *  2. Renders draggable HTML handles for SL and TP.
+ *  3. Monitors live ticks and auto-triggers a close when the underlying
+ *     spot crosses an SL or TP line (respecting `triggerAbove` direction).
+ *  4. Shows estimated option P&L at each SL/TP level (Black-Scholes).
+ *  5. Provides an inline lot-size editor for the exit qty.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LineStyle } from 'lightweight-charts';
@@ -20,6 +17,7 @@ import { useBrokerStore } from '../state/brokerStore';
 import { useToastStore } from '../state/toastStore';
 import { useChartStore } from '../state/chartStore';
 import { liveFeed } from '../data/dataService';
+import { optionPremium, lotSize } from '../data/options';
 import './PositionLines.css';
 
 // ─── Styling helpers ──────────────────────────────────────────────────────
@@ -34,47 +32,60 @@ function chartLineTitle(l: PositionLine): string {
   return `${l.type.toUpperCase()} ₹${l.price.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
 }
 
+/** Estimate option P&L if the underlying reaches `linePrice`. */
+function estimatePnl(line: PositionLine): number | null {
+  if (!line.optionEntryPremium || !line.strike || !line.optType) return null;
+  const daysLeft = line.expiryDate
+    ? Math.max(0.1, (line.expiryDate - Date.now()) / 86_400_000)
+    : 7;
+  const premAtLevel = optionPremium(line.price, line.strike, line.optType, daysLeft);
+  const exitLots = line.exitQty ?? line.lots ?? 1;
+  const ls = lotSize(line.underlying);
+  return (premAtLevel - line.optionEntryPremium) * exitLots * ls * (line.side === 'buy' ? 1 : -1);
+}
+
+function fmtPnl(n: number | null): string | null {
+  if (n == null) return null;
+  const abs = Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  return `${n >= 0 ? '+' : '−'}₹${abs}`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 export function PositionLines() {
   const { chartRef, seriesRef, containerRef, ready } = useChartApi();
   const currentSymbol = useChartStore((s) => s.symbol.symbol);
-  const dataVersion   = useChartStore((s) => s.dataVersion); // bumps on series recreate
+  const dataVersion   = useChartStore((s) => s.dataVersion);
 
-  const allLines      = usePriceLinesStore((s) => s.lines);
-  const updatePrice   = usePriceLinesStore((s) => s.updatePrice);
-  const removeLine    = usePriceLinesStore((s) => s.removeLine);
-  const removeByPos   = usePriceLinesStore((s) => s.removeByPosition);
+  const allLines     = usePriceLinesStore((s) => s.lines);
+  const updatePrice  = usePriceLinesStore((s) => s.updatePrice);
+  const updateExitQty = usePriceLinesStore((s) => s.updateExitQty);
+  const removeLine   = usePriceLinesStore((s) => s.removeLine);
+  const removeByPos  = usePriceLinesStore((s) => s.removeByPosition);
 
   const removePosition = usePositionsStore((s) => s.remove);
-  const pushToast     = useToastStore((s) => s.push);
+  const pushToast      = useToastStore((s) => s.push);
 
-  // Lines for the currently displayed underlying
+  // Lines whose underlying matches the chart symbol
   const activeLines = allLines.filter((l) => l.underlying === currentSymbol);
 
-  // Refs to the lightweight-charts IPriceLine objects (keyed by line id)
   type PL = ReturnType<NonNullable<typeof seriesRef.current>['createPriceLine']>;
   const plRefs = useRef<Map<string, PL>>(new Map());
 
-  // Pixel-Y of each SL/TP handle (updated every animation frame)
   const handleYsRef = useRef<Record<string, number>>({});
-  const [syncKey, setSyncKey] = useState(0); // bumped when Ys change → triggers render
-
-  // Active drag
+  const [syncKey, setSyncKey] = useState(0);
   const dragRef = useRef<{ id: string } | null>(null);
 
-  // ── 1. Sync lightweight-charts price lines with store ──────────────────
+  // ── 1. Sync lightweight-charts price lines ────────────────────────────
   useEffect(() => {
     if (!ready) return;
     const series = seriesRef.current;
     if (!series) return;
 
-    // Clear all tracked refs (handles series-recreation transparently via try/catch)
     for (const [, pl] of plRefs.current) {
-      try { series.removePriceLine(pl); } catch { /* old series, already gone */ }
+      try { series.removePriceLine(pl); } catch { /* old series */ }
     }
     plRefs.current.clear();
 
-    // Recreate all active lines on the (possibly new) series
     for (const line of activeLines) {
       try {
         const pl = series.createPriceLine({
@@ -86,10 +97,9 @@ export function PositionLines() {
           title: chartLineTitle(line),
         });
         plRefs.current.set(line.id, pl);
-      } catch { /* series not ready yet */ }
+      } catch { /* series not ready */ }
     }
 
-    // Cleanup when lines change or component unmounts
     return () => {
       const s = seriesRef.current;
       for (const [, pl] of plRefs.current) {
@@ -100,36 +110,25 @@ export function PositionLines() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLines, ready, dataVersion]);
 
-  // ── 2. RAF: keep SL/TP handle Y positions in sync with price scale ─────
+  // ── 2. RAF: keep handle Y positions in sync ───────────────────────────
   useEffect(() => {
     if (!ready) return;
     let rafId: number;
-
     const syncYs = () => {
       const series = seriesRef.current;
       if (!series) { rafId = requestAnimationFrame(syncYs); return; }
-
       let dirty = false;
       const ys = handleYsRef.current;
-
       for (const line of activeLines) {
         if (line.type === 'entry') continue;
         const y = series.priceToCoordinate(line.price);
         const prev = ys[line.id] ?? -9999;
-
-        if (y !== null && Math.abs(prev - y) > 0.5) {
-          ys[line.id] = y;
-          dirty = true;
-        } else if (y === null && line.id in ys) {
-          delete ys[line.id];
-          dirty = true;
-        }
+        if (y !== null && Math.abs(prev - y) > 0.5) { ys[line.id] = y; dirty = true; }
+        else if (y === null && line.id in ys) { delete ys[line.id]; dirty = true; }
       }
-
       if (dirty) setSyncKey((k) => k + 1);
       rafId = requestAnimationFrame(syncYs);
     };
-
     rafId = requestAnimationFrame(syncYs);
     return () => cancelAnimationFrame(rafId);
   }, [activeLines, ready]);
@@ -141,35 +140,49 @@ export function PositionLines() {
 
   useEffect(() => {
     if (!currentSymbol) return;
-
     const unsub = liveFeed.subscribe(currentSymbol, (tick) => {
-      const ltp = tick.ltp;
+      const ltp  = tick.ltp;
       const prev = prevTickRef.current;
       prevTickRef.current = ltp;
-      if (prev === null) return; // skip initialisation tick
+      if (prev === null) return;
 
       for (const line of activeLinesRef.current) {
         if (line.type === 'entry') continue;
 
-        const isSl = line.type === 'sl';
-        const hit = isSl
-          ? (line.side === 'buy' ? ltp <= line.price : ltp >= line.price)
-          : (line.side === 'buy' ? ltp >= line.price : ltp <= line.price);
+        // Resolve trigger direction: explicit flag or fall back to side-based logic.
+        const triggerAbove = line.triggerAbove
+          ?? (line.type === 'sl' ? line.side !== 'buy' : line.side === 'buy');
+
+        const hit = triggerAbove
+          ? (prev < line.price && ltp >= line.price)   // crossed UP through the line
+          : (prev > line.price && ltp <= line.price);  // crossed DOWN through the line
 
         if (!hit) continue;
 
-        const pct = line.entryPrice > 0
-          ? ((line.price - line.entryPrice) / line.entryPrice) * 100 : 0;
+        const isSl   = line.type === 'sl';
+        const pnlEst = estimatePnl(line);
+        const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
+        const maxLots = line.lots ?? 1;
+        const exitLots = line.exitQty ?? maxLots;
+        
+        if (exitLots <= 0 || exitLots > maxLots) {
+          pushToast(`Trigger ignored for ${line.symbol}: invalid exit qty (${exitLots}L)`);
+          continue;
+        }
+
         pushToast(
-          `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)} · ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+          `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`
         );
 
-        // Close position
+        // Exit order qty
+        const lotSz = line.lots && line.lots > 0 ? line.qty / line.lots : 1;
+        const exitQtyUnits = Math.round(exitLots * lotSz);
+
         const brokerSource = useBrokerStore.getState().source;
         if (brokerSource === 'upstox' && line.instrumentKey) {
           useBrokerStore.getState().placeOrder({
             instrument_key: line.instrumentKey,
-            qty: line.qty,
+            qty: exitQtyUnits,
             transaction_type: line.side === 'buy' ? 'SELL' : 'BUY',
           }).catch(() => {});
         } else {
@@ -177,14 +190,13 @@ export function PositionLines() {
         }
 
         removeByPos(line.positionId);
-        break; // one trigger per tick
+        break;
       }
     });
-
     return () => { unsub(); prevTickRef.current = null; };
   }, [currentSymbol, removePosition, removeByPos, pushToast]);
 
-  // ── 4. Drag handlers ──────────────────────────────────────────────────
+  // ── 4. Drag handlers ─────────────────────────────────────────────────
   const onHandleMouseDown = useCallback((id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -197,87 +209,106 @@ export function PositionLines() {
       const series = seriesRef.current;
       const container = containerRef.current;
       if (!series || !container) return;
-
       const rect = container.getBoundingClientRect();
-      const chartY = e.clientY - rect.top;
-      const newPrice = series.coordinateToPrice(chartY);
-      if (newPrice != null && newPrice > 0) {
+      const newPrice = series.coordinateToPrice(e.clientY - rect.top);
+      if (newPrice != null && newPrice > 0)
         updatePrice(dragRef.current.id, parseFloat(newPrice.toFixed(2)));
-      }
     };
     const onUp = () => { dragRef.current = null; };
-
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [updatePrice, seriesRef, containerRef]);
 
-  // ── 5. Render HTML handles ─────────────────────────────────────────────
-  // syncKey is used as a render-trigger so this re-renders when Ys change.
+  // ── 5. Render HTML handles ────────────────────────────────────────────
   void syncKey;
 
   return (
     <div className="pl-overlay">
-      {/* Entry line label — left side of chart */}
-      {activeLines
-        .filter((l) => l.type === 'entry')
-        .map((line) => {
-          const y = seriesRef.current?.priceToCoordinate(line.price);
-          if (y == null) return null;
-          return (
-            <div
-              key={line.id}
-              className={`pl-entry-label ${line.side}`}
-              style={{ top: Math.round(y) - 12 }}
-            >
-              <span className="pl-entry-dot">◆</span>
-              <span className="pl-entry-side">{line.side.toUpperCase()}</span>
-              <span className="pl-entry-price">₹{line.price.toFixed(2)}</span>
-              <span className="pl-entry-qty">{line.qty}qty</span>
-              <button
-                className="pl-x"
-                title="Remove entry line"
-                onClick={() => removeLine(line.id)}
-              >×</button>
-            </div>
-          );
-        })}
+      {/* Entry line labels */}
+      {activeLines.filter((l) => l.type === 'entry').map((line) => {
+        const y = seriesRef.current?.priceToCoordinate(line.price);
+        if (y == null) return null;
+        return (
+          <div key={line.id} className={`pl-entry-label ${line.side}`} style={{ top: Math.round(y) - 12 }}>
+            <span className="pl-entry-dot">◆</span>
+            <span className="pl-entry-side">{line.side.toUpperCase()}</span>
+            <span className="pl-entry-price">₹{line.price.toFixed(2)}</span>
+            <span className="pl-entry-qty">{line.lots ? `${line.lots}L` : `${line.qty}qty`}</span>
+            <button className="pl-x" title="Remove entry line" onClick={() => removeLine(line.id)}>×</button>
+          </div>
+        );
+      })}
 
-      {/* SL / TP drag handles — right side of chart */}
-      {activeLines
-        .filter((l) => l.type !== 'entry')
-        .map((line) => {
-          const y = handleYsRef.current[line.id];
-          if (y == null) return null;
+      {/* SL / TP drag handles with P&L and exit-qty editor */}
+      {activeLines.filter((l) => l.type !== 'entry').map((line) => {
+        const y = handleYsRef.current[line.id];
+        if (y == null) return null;
 
-          const pct = line.entryPrice > 0
-            ? ((line.price - line.entryPrice) / line.entryPrice) * 100 : 0;
-          const isSl = line.type === 'sl';
+        const isSl     = line.type === 'sl';
+        const pct      = line.entryPrice > 0 ? ((line.price - line.entryPrice) / line.entryPrice) * 100 : 0;
+        const pnlEst   = estimatePnl(line);
+        const maxLots  = line.lots ?? 1;              // position lot count — upper bound
+        const exitLots = line.exitQty ?? maxLots;
 
-          return (
-            <div
-              key={line.id}
-              className={`pl-handle pl-${line.type}`}
-              style={{ top: Math.round(y) - 13 }}
-              onMouseDown={(e) => onHandleMouseDown(line.id, e)}
-            >
-              <span className="pl-grip">⣿</span>
-              <span className="pl-handle-tag">{isSl ? 'SL' : 'TP'}</span>
-              <span className="pl-handle-price">₹{line.price.toFixed(2)}</span>
-              <span className={`pl-handle-pct ${pct >= 0 ? 'pl-up' : 'pl-dn'}`}>
-                {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+        // Validation: qty must be 1..maxLots
+        const qtyErr =
+          exitLots <= 0         ? 'Must be ≥ 1'
+          : exitLots > maxLots  ? `Max ${maxLots}L`
+          : null;
+
+        return (
+          <div
+            key={line.id}
+            className={`pl-handle pl-${line.type}${qtyErr ? ' pl-handle-err' : ''}`}
+            style={{ top: Math.round(y) - 14 }}
+            onMouseDown={(e) => onHandleMouseDown(line.id, e)}
+          >
+            {/* Price badge */}
+            <span className="pl-handle-price">₹{line.price.toFixed(2)}</span>
+
+            {/* % distance from entry */}
+            <span className={`pl-handle-pct ${pct >= 0 ? 'pl-up' : 'pl-dn'}`}>
+              {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+            </span>
+
+            {/* Est P&L based on distance & option greeks (if active) */}
+            {pnlEst != null && !qtyErr && (
+              <span className={`pl-handle-pnl ${pnlEst >= 0 ? 'pl-pnl-up' : 'pl-pnl-dn'}`}>
+                {fmtPnl(pnlEst)}
               </span>
-              <button
-                className="pl-x"
-                title={`Remove ${line.type.toUpperCase()} line`}
-                onClick={(e) => { e.stopPropagation(); removeLine(line.id); }}
-              >×</button>
-            </div>
-          );
-        })}
+            )}
+
+            {/* Exit qty editor */}
+            <span className="pl-exit-sep">|</span>
+            <input
+              className={`pl-exit-qty${qtyErr ? ' pl-qty-err' : ''}`}
+              type="number"
+              min={1}
+              max={maxLots}
+              value={exitLots}
+              title={qtyErr ?? `Exit lots (1–${maxLots})`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                // Accept the raw string while typing (allow empty/in-progress)
+                const raw = e.target.value;
+                const v   = parseInt(raw, 10);
+                if (!isNaN(v)) updateExitQty(line.id, v);   // store clamps to ≥ 1 already
+              }}
+            />
+            <span className="pl-exit-label">L</span>
+            {/* Inline error badge */}
+            {qtyErr && (
+              <span className="pl-qty-err-badge" title={qtyErr}>⚠ {qtyErr}</span>
+            )}
+            <button
+              className="pl-x"
+              title={`Remove ${line.type.toUpperCase()} line`}
+              onClick={(e) => { e.stopPropagation(); removeLine(line.id); }}
+            >×</button>
+          </div>
+        );
+      })}
     </div>
   );
 }

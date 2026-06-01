@@ -1,4 +1,4 @@
-import { FIB_COLORS, FIB_LEVELS, type Drawing, type DStyle } from './types';
+import { FIB_COLORS, FIB_LEVELS, EW_LABELS, type Drawing, type DStyle } from './types';
 
 export interface Pt { x: number; y: number; }
 
@@ -108,6 +108,13 @@ export function renderDrawing(
       }
       if (d.type === 'polyline') for (const p of pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fillStyle = s.color; ctx.fill(); }
       break;
+    case 'ew_impulse':
+    case 'ew_correction':
+    case 'ew_triangle':
+    case 'ew_double':
+    case 'ew_triple':
+      renderElliottWave(ctx, d.type, pts, s);
+      break;
     case 'emoji':
       ctx.setLineDash([]); ctx.font = `${(d.style.fontSize || 14) * 1.6}px sans-serif`;
       ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
@@ -115,7 +122,7 @@ export function renderDrawing(
       break;
     case 'longpos':
     case 'shortpos':
-      if (pts[2]) renderPosition(ctx, d.type, pts, prices);
+      if (pts[2]) renderPosition(ctx, d.type, pts, prices, w);
       else if (pts[1]) line(pts[0], pts[1]);
       break;
     case 'text':
@@ -125,6 +132,82 @@ export function renderDrawing(
       ctx.fillText(d.text || 'Text', pts[0].x + 4, pts[0].y);
       break;
   }
+  ctx.restore();
+}
+
+// ── Elliott Wave renderer ─────────────────────────────────────────────────
+function renderElliottWave(
+  ctx: CanvasRenderingContext2D,
+  type: string,
+  pts: Pt[],
+  s: DStyle,
+) {
+  if (pts.length < 2) return;
+  const labels = EW_LABELS[type] ?? [];
+
+  // Wave-number colours: odd waves (up legs in impulse) vs even (corrections)
+  // For correction/triangle types, alternate colours
+  const WAVE_COLORS: Record<string, string> = {
+    '1': '#26a69a', '2': '#ef5350', '3': '#26a69a', '4': '#ef5350', '5': '#26a69a',
+    'A': '#ef5350', 'B': '#26a69a', 'C': '#ef5350',
+    'D': '#26a69a', 'E': '#ef5350',
+    'W': '#26a69a', 'X': '#ef5350', 'Y': '#26a69a', 'Z': '#26a69a',
+    '0': s.color,
+  };
+
+  ctx.save();
+  ctx.lineWidth = s.width;
+  ctx.setLineDash([]);
+
+  // Draw segments with per-wave colour
+  for (let i = 1; i < pts.length; i++) {
+    const label = labels[i] ?? String(i);
+    const wc = WAVE_COLORS[label] ?? s.color;
+    ctx.strokeStyle = wc;
+    ctx.beginPath();
+    ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+    ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
+
+  // Draw anchor dots and wave labels at each point
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const label = labels[i] ?? String(i);
+    const wc = WAVE_COLORS[label] ?? s.color;
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = wc;
+    ctx.fill();
+    ctx.strokeStyle = '#131722';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Label badge above/below the dot (above for odd indices, below for even)
+    const above = i % 2 === 0;
+    const bx = p.x;
+    const by = above ? p.y - 16 : p.y + 16;
+
+    const tw = ctx.measureText(label).width;
+    const pw = tw + 8, ph = 16;
+    ctx.fillStyle = wc;
+    if ((ctx as any).roundRect) {
+      (ctx as any).roundRect(bx - pw / 2, by - ph / 2, pw, ph, 3);
+    } else {
+      ctx.rect(bx - pw / 2, by - ph / 2, pw, ph);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, bx, by);
+  }
+
   ctx.restore();
 }
 
@@ -155,47 +238,102 @@ function renderFib(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: number[]
   ctx.restore();
 }
 
-// 3 anchors: entry, target, stop. Shows the profit/loss zones, the three
-// price levels, the % moves and the risk/reward ratio — TradingView-style.
-function renderPosition(ctx: CanvasRenderingContext2D, type: 'longpos' | 'shortpos', pts: Pt[], prices: number[]) {
+// 3 anchors stored as (entry, target, stop) — all share the same logical X
+// (the bar where the user clicked).  The rendered zones span the full canvas
+// width, just like TradingView.
+function renderPosition(
+  ctx: CanvasRenderingContext2D,
+  type: 'longpos' | 'shortpos',
+  pts: Pt[],
+  prices: number[],
+  canvasW: number,
+) {
   const [entry, target, stop] = pts;
   const [entryP, targetP, stopP] = prices;
-  const xs = pts.map((p) => p.x);
-  const xL = Math.min(...xs), xR = Math.max(...xs);
+
+  // Always span full canvas width so zones are visible even when the anchor
+  // bar is at the edge of the visible range.
+  const xL = 0;
+  const xR = canvasW;
+
   const green = '#26a69a', red = '#ef5350';
   const profitColor = type === 'longpos' ? green : red;
-  const lossColor = type === 'longpos' ? red : green;
+  const lossColor   = type === 'longpos' ? red   : green;
 
-  ctx.save(); ctx.setLineDash([]);
-  ctx.globalAlpha = 0.15;
-  ctx.fillStyle = profitColor; ctx.fillRect(xL, Math.min(entry.y, target.y), xR - xL, Math.abs(target.y - entry.y));
-  ctx.fillStyle = lossColor; ctx.fillRect(xL, Math.min(entry.y, stop.y), xR - xL, Math.abs(stop.y - entry.y));
+  ctx.save();
+  ctx.setLineDash([]);
+
+  // Filled zones
+  ctx.globalAlpha = 0.13;
+  ctx.fillStyle = profitColor;
+  ctx.fillRect(xL, Math.min(entry.y, target.y), xR - xL, Math.abs(target.y - entry.y));
+  ctx.fillStyle = lossColor;
+  ctx.fillRect(xL, Math.min(entry.y, stop.y), xR - xL, Math.abs(stop.y - entry.y));
   ctx.globalAlpha = 1;
 
-  const levels: [Pt, string][] = [[entry, '#2962ff'], [target, profitColor], [stop, lossColor]];
-  for (const [p, c] of levels) { ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(xL, p.y); ctx.lineTo(xR, p.y); ctx.stroke(); }
+  // Dashed horizontal lines
+  ctx.setLineDash([6, 4]);
+  const levels: [Pt, string, string][] = [
+    [entry,  '#2962ff',   'Entry'],
+    [target, profitColor, 'Target'],
+    [stop,   lossColor,   'Stop'],
+  ];
+  for (const [p, c] of levels) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(xL, p.y);
+    ctx.lineTo(xR, p.y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
 
-  const reward = Math.abs(targetP - entryP);
-  const risk = Math.abs(entryP - stopP) || 1e-9;
-  const rr = reward / risk;
+  // Labels on the right edge (before price axis)
+  const reward    = Math.abs(targetP - entryP);
+  const risk      = Math.abs(entryP - stopP) || 1e-9;
+  const rr        = reward / risk;
   const rewardPct = entryP ? ((targetP - entryP) / entryP) * 100 : 0;
-  const riskPct = entryP ? ((stopP - entryP) / entryP) * 100 : 0;
+  const riskPct   = entryP ? ((stopP   - entryP) / entryP) * 100 : 0;
 
-  ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.font = '12px sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
   const tag = (p: Pt, text: string, c: string) => {
-    const tw = ctx.measureText(text).width + 10;
-    ctx.fillStyle = c; ctx.fillRect(xR + 4, p.y - 8, tw, 16);
-    ctx.fillStyle = '#fff'; ctx.fillText(text, xR + 9, p.y);
+    const tw = ctx.measureText(text).width + 12;
+    const tx = xR - tw - 72;  // sit just left of the price scale
+    if ((ctx as any).roundRect) {
+      ctx.fillStyle = c;
+      (ctx as any).roundRect(tx, p.y - 9, tw, 18, 3);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = c;
+      ctx.fillRect(tx, p.y - 9, tw, 18);
+    }
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, tx + 6, p.y);
   };
-  tag(entry, `Entry ${fmt(entryP)}`, '#2962ff');
-  tag(target, `Target ${fmt(targetP)} (${rewardPct >= 0 ? '+' : ''}${rewardPct.toFixed(2)}%)`, profitColor);
-  tag(stop, `Stop ${fmt(stopP)} (${riskPct >= 0 ? '+' : ''}${riskPct.toFixed(2)}%)`, lossColor);
 
-  const rrLabel = `Risk/Reward  ${rr.toFixed(2)} : 1`;
-  ctx.textAlign = 'center'; const cx = (xL + xR) / 2;
-  const tw = ctx.measureText(rrLabel).width + 12;
-  ctx.fillStyle = 'rgba(30,34,45,0.95)'; ctx.fillRect(cx - tw / 2, entry.y - 9, tw, 18);
-  ctx.fillStyle = '#d1d4dc'; ctx.fillText(rrLabel, cx, entry.y);
+  tag(entry,  `Entry  ${fmt(entryP)}`,                                           '#2962ff');
+  tag(target, `Target  ${fmt(targetP)}  (${rewardPct >= 0 ? '+' : ''}${rewardPct.toFixed(2)}%)`, profitColor);
+  tag(stop,   `Stop  ${fmt(stopP)}  (${riskPct >= 0 ? '+' : ''}${riskPct.toFixed(2)}%)`,         lossColor);
+
+  // R:R badge centred on the entry line
+  const rrLabel = `R:R  1 : ${rr.toFixed(2)}`;
+  ctx.textAlign = 'center';
+  const cx  = xR / 2;
+  const rtw = ctx.measureText(rrLabel).width + 14;
+  ctx.fillStyle = 'rgba(15,18,30,0.92)';
+  if ((ctx as any).roundRect) {
+    (ctx as any).roundRect(cx - rtw / 2, entry.y - 10, rtw, 20, 4);
+    ctx.fill();
+  } else {
+    ctx.fillRect(cx - rtw / 2, entry.y - 10, rtw, 20);
+  }
+  ctx.fillStyle = '#d1d4dc';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(rrLabel, cx, entry.y);
+
   ctx.restore();
 }
 
@@ -328,7 +466,13 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
     case 'extended': { if (!pts[1]) return false; const [a, b] = extend(pts[0], pts[1], w, h, true); return distToSeg(m.x, m.y, a, b) < tol; }
     case 'hline': case 'hray': return Math.abs(m.y - pts[0].y) < tol && (d.type === 'hline' || m.x >= pts[0].x - tol);
     case 'vline': return Math.abs(m.x - pts[0].x) < tol;
-    case 'rect': case 'measure': case 'longpos': case 'shortpos': case 'fib': case 'pricerange':
+    case 'longpos': case 'shortpos': {
+      // All 3 points share the same X, so test proximity to any of the
+      // 3 horizontal price lines (entry, target, stop) across full width.
+      if (pts.length < 2) return false;
+      return pts.some((p) => Math.abs(m.y - p.y) < tol);
+    }
+    case 'rect': case 'measure': case 'fib': case 'pricerange':
     case 'triangle': case 'pchannel': case 'pitchfork': case 'fibext': case 'gannfan': {
       if (pts.length < 2) return false;
       const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
@@ -344,7 +488,9 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
       const v = ((m.x - cx) ** 2) / (rx * rx) + ((m.y - cy) ** 2) / (ry * ry);
       return v > 0.7 && v < 1.4;
     }
-    case 'brush': case 'polyline': { for (let i = 1; i < pts.length; i++) if (distToSeg(m.x, m.y, pts[i - 1], pts[i]) < tol) return true; return false; }
+    case 'brush': case 'polyline':
+    case 'ew_impulse': case 'ew_correction': case 'ew_triangle': case 'ew_double': case 'ew_triple':
+      { for (let i = 1; i < pts.length; i++) if (distToSeg(m.x, m.y, pts[i - 1], pts[i]) < tol) return true; return false; }
     case 'text': case 'callout': return Math.abs(m.x - pts[0].x) < 60 && Math.abs(m.y - pts[0].y) < 16;
     case 'emoji': return Math.hypot(m.x - pts[0].x, m.y - pts[0].y) < 18;
   }

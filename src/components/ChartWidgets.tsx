@@ -426,7 +426,8 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
   }, [clearPaper, removeLines]);
 
   const isLive = source === 'upstox';
-  const posCount = isLive ? brokerPositions.length : paperPositions.length;
+  // Always count both broker + paper so the badge reflects reality.
+  const posCount = (isLive ? brokerPositions.length : 0) + paperPositions.length;
   const ordCount = isLive ? brokerOrders.length : 0;
 
   return (
@@ -455,7 +456,7 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
           )}
         </span>
         <ModeBadge source={source} sandbox={sandbox} />
-        {!isLive && posCount > 0 && (
+        {paperPositions.length > 0 && (
           <button className="cw-clear-all" title="Close all paper positions" onClick={clearAll}>✕ All</button>
         )}
         <button className="cw-toggle" onClick={toggle}>{collapsed ? '▾' : '▴'}</button>
@@ -473,13 +474,15 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
                     <span>Symbol</span><span>Side</span><span>Qty</span>
                     <span>Avg</span><span>LTP</span><span>P&L</span><span />
                   </div>
-                  {isLive
-                    ? brokerPositions.map((p) => (
-                        <BrokerPosRow key={p.instrument_token + p.product} p={p} onCancel={null} />
-                      ))
-                    : paperPositions.map((p) => (
-                        <PaperPosRow key={p.id} p={p} onRemove={removePaper} />
-                      ))}
+                  {isLive && brokerPositions.map((p) => (
+                    <BrokerPosRow key={p.instrument_token + p.product} p={p} onCancel={null} />
+                  ))}
+                  {isLive && brokerPositions.length > 0 && paperPositions.length > 0 && (
+                    <div className="pos-section-sep">Paper</div>
+                  )}
+                  {paperPositions.map((p) => (
+                    <PaperPosRow key={p.id} p={p} onRemove={removePaper} />
+                  ))}
                 </>
               )}
             </>

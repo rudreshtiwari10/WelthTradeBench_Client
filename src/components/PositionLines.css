@@ -14,10 +14,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 6px 0 4px;
+  height: 26px;
+  padding: 0 7px 0 5px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   pointer-events: auto;
   user-select: none;
@@ -42,20 +42,21 @@
 /* ── SL / TP drag handle (right side, before price scale) ── */
 .pl-handle {
   position: absolute;
-  right: 68px; /* sits just before the right price-axis */
+  right: 68px;
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
+  gap: 4px;
+  height: 30px;
   padding: 0 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   cursor: ns-resize;
   pointer-events: auto;
   user-select: none;
   border: 1px solid transparent;
   transition: filter 0.1s;
+  white-space: nowrap;
 }
 .pl-handle:hover { filter: brightness(1.15); }
 .pl-handle:active { filter: brightness(0.9); }
@@ -90,6 +91,44 @@
 }
 .pl-up { color: rgba(255,255,255,0.95); }
 .pl-dn { color: rgba(255,255,255,0.95); }
+
+/* ── P&L estimate on handle ── */
+.pl-handle-pnl {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.22);
+}
+.pl-pnl-up { color: #b2dfdb; }
+.pl-pnl-dn { color: #ffcdd2; }
+
+/* ── Exit qty editor ── */
+.pl-exit-sep {
+  opacity: 0.35;
+  font-size: 11px;
+}
+.pl-exit-qty {
+  width: 30px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 2px;
+  height: 18px;
+  -moz-appearance: textfield;
+  pointer-events: auto;
+  cursor: text;
+}
+.pl-exit-qty::-webkit-inner-spin-button { display: none; }
+.pl-exit-qty:focus { outline: 1px solid rgba(255,255,255,0.5); }
+.pl-exit-label {
+  font-size: 10px;
+  opacity: 0.7;
+}
 
 /* ── Shared remove button ── */
 .pl-x {

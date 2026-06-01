@@ -20,12 +20,13 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
-  padding: 0 9px 0 6px;
+  height: 34px;
+  padding: 0 10px 0 7px;
   border-radius: var(--radius);
   color: var(--text-strong);
   font-weight: 700;
   font-size: var(--fs-lg);
+  letter-spacing: 0.01em;
   transition: background 0.12s ease;
 }
 .symbol-btn:hover {

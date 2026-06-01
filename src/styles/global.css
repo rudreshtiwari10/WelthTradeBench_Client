@@ -36,8 +36,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius);
   color: var(--text-muted);
   transition: background 0.12s ease, color 0.12s ease;
@@ -56,8 +56,8 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
-  padding: 0 8px;
+  height: 32px;
+  padding: 0 9px;
   border-radius: var(--radius);
   color: var(--text);
   font-size: var(--fs-md);

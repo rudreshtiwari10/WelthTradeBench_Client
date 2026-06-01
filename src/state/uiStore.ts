@@ -18,6 +18,14 @@ interface UiState {
   trade: { open: boolean; symbol: string; side: 'buy' | 'sell'; spot: number };
   openTrade: (symbol: string, side: 'buy' | 'sell', spot: number) => void;
   closeTrade: () => void;
+  chainOpen: boolean;
+  toggleChain: () => void;
+  closeChain: () => void;
+  // Global symbol-search modal (opened via toolbar click or any printable keypress)
+  searchOpen: boolean;
+  searchInitialQuery: string;
+  openSearch: (q?: string) => void;
+  closeSearch: () => void;
   theme: Theme;
   toggleTheme: () => void;
 }
@@ -39,6 +47,13 @@ export const useUiStore = create<UiState>((set) => ({
   trade: { open: false, symbol: '', side: 'buy', spot: 0 },
   openTrade: (symbol, side, spot) => set({ trade: { open: true, symbol, side, spot } }),
   closeTrade: () => set((s) => ({ trade: { ...s.trade, open: false } })),
+  chainOpen: false,
+  toggleChain: () => set((s) => ({ chainOpen: !s.chainOpen })),
+  closeChain: () => set({ chainOpen: false }),
+  searchOpen: false,
+  searchInitialQuery: '',
+  openSearch: (q = '') => set({ searchOpen: true, searchInitialQuery: q }),
+  closeSearch: () => set({ searchOpen: false, searchInitialQuery: '' }),
   theme: initialTheme,
   toggleTheme: () => set((s) => {
     const theme: Theme = s.theme === 'dark' ? 'light' : 'dark';

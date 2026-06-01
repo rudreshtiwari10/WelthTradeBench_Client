@@ -16,8 +16,8 @@
 }
 
 .bb-range {
-  height: 22px;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 9px;
   border-radius: 3px;
   color: var(--text-muted);
   font-size: var(--fs-sm);

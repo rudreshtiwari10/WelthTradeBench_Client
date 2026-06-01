@@ -4,3 +4,39 @@
   z-index: 4;
   touch-action: none;
 }
+
+/* Transparent backdrop to clear selection on empty-chart click */
+.draw-deselect-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;          /* below the canvas (z-index 4) but above the chart */
+  cursor: default;
+}
+
+/* ── Drawing right-click context menu ─────────────────────────────────── */
+.draw-ctx-menu {
+  position: fixed;
+  z-index: 500;
+  min-width: 170px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  padding: 4px;
+}
+.draw-ctx-menu .ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: var(--radius);
+}
+.draw-ctx-menu .ctx-item:hover { background: var(--hover); }
+.draw-ctx-menu .ctx-item.danger:hover { color: #ef5350; }
+.draw-ctx-menu .ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0;
+}

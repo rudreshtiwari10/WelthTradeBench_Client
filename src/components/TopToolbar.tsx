@@ -29,7 +29,7 @@ const INTERVAL_SHORT: Record<string, string> = {
 
 export function TopToolbar() {
   const { symbol, interval, chartType, setInterval, setChartType } = useChartStore();
-  const { openIndicators, openSettings, theme, toggleTheme, setChartOnly } = useUiStore();
+  const { openIndicators, openSettings, theme, toggleTheme, setChartOnly, chainOpen, toggleChain } = useUiStore();
   const replay = useReplayStore();
   const addAlert = useAlertStore((s) => s.add);
   const pushToast = useToastStore((s) => s.push);
@@ -83,7 +83,10 @@ export function TopToolbar() {
     if (replay.active) replay.exit();
     else replay.start(useChartStore.getState().barCount || 300);
   };
-  const [searchOpen, setSearchOpen] = useState(false);
+  const searchOpen         = useUiStore((s) => s.searchOpen);
+  const searchInitialQuery = useUiStore((s) => s.searchInitialQuery);
+  const openSearch         = useUiStore((s) => s.openSearch);
+  const closeSearch        = useUiStore((s) => s.closeSearch);
   const [compareOpen, setCompareOpen] = useState(false);
   const [mode, setMode] = useState<'upstox' | 'mock'>('mock');
   const [creds, setCreds] = useState(false);
@@ -97,7 +100,7 @@ export function TopToolbar() {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <button className="symbol-btn" title="Symbol Search" onClick={() => setSearchOpen(true)}>
+        <button className="symbol-btn" title="Symbol Search (or press any letter key)" onClick={() => openSearch()}>
           <span className="symbol-mark">{mark}</span>
           <span className="symbol-name">{symbol.symbol}</span>
         </button>
@@ -247,11 +250,15 @@ export function TopToolbar() {
 
         <div className="sep" />
 
-        <button className="pill-btn outlined" title="Trading Panel">Trade</button>
+        <button
+          className={`pill-btn ${chainOpen ? 'strong' : 'outlined'}`}
+          title="Options Chain — one-click trading"
+          onClick={toggleChain}
+        >⊞ Chain</button>
         <button className="publish-btn" title="Publish">Publish</button>
       </div>
 
-      {searchOpen && <SymbolSearch onClose={() => setSearchOpen(false)} />}
+      {searchOpen && <SymbolSearch onClose={closeSearch} initialQuery={searchInitialQuery} />}
       {compareOpen && <SymbolSearch mode="compare" onClose={() => setCompareOpen(false)} />}
     </header>
   );

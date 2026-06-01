@@ -53,12 +53,13 @@
 
 .ss-row {
   display: grid;
-  grid-template-columns: 120px 1fr auto auto;
+  grid-template-columns: 130px 1fr auto auto;
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 10px 14px;
   border-radius: var(--radius);
+  font-size: var(--fs-md);
   text-align: left;
 }
 .ss-row.hi {
@@ -86,6 +87,40 @@
   min-width: 36px;
   text-align: right;
 }
+
+/* Section header inside results list */
+.ss-section-head {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Highlighted match text */
+.ss-match {
+  background: rgba(41, 98, 255, 0.28);
+  color: var(--text-strong);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Kind badges with colour per type */
+.ss-kind {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.ss-kind-index  { background: rgba(41,  98, 255, 0.15); color: #2962ff; }
+.ss-kind-stock  { background: rgba(38, 166, 154, 0.15); color: var(--up); }
+.ss-kind-future { background: rgba(255, 152,   0, 0.15); color: #ff9800; }
+.ss-kind-option { background: rgba(156,  39, 176, 0.15); color: #ab47bc; }
+.ss-kind-crypto { background: rgba(255, 193,   7, 0.15); color: #ffc107; }
 
 /* ── Tab bar ── */
 .ss-tabs {

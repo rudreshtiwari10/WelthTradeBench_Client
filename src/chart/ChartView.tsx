@@ -12,6 +12,8 @@ import { useChartStore } from '../state/chartStore';
 import { useDrawingStore } from '../state/drawingStore';
 import { useReplayStore } from '../state/replayStore';
 import { fetchHistory, liveFeed } from '../data/dataService';
+import { useToastStore } from '../state/toastStore';
+import { useBrokerStore } from '../state/brokerStore';
 import type { Candle } from '../data/types';
 import { ChartContext } from './ChartContext';
 import { DrawingLayer } from '../drawings/DrawingLayer';
@@ -46,6 +48,7 @@ export function ChartView() {
 
   const { symbol, interval, chartType } = useChartStore();
   const loadDrawings = useDrawingStore((s) => s.loadFor);
+  const pushToast = useToastStore((s) => s.push);
   const [ready, setReady] = useState(false);
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -101,15 +104,34 @@ export function ChartView() {
     };
   }, []);
 
+  // Intraday intervals need time shown on the X-axis; daily/weekly/monthly don't.
+  const INTRADAY = new Set(['1m', '3m', '5m', '15m', '30m', '1H', '2H', '4H']);
+  useEffect(() => {
+    if (!ready) return;
+    chartRef.current?.applyOptions({
+      timeScale: { timeVisible: INTRADAY.has(interval), secondsVisible: false },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interval, ready]);
+
   // Keep current chart type available to the (long-lived) tick handler.
   const chartTypeRef = useRef(chartType);
   chartTypeRef.current = chartType;
 
   // (Re)build series for the chart type and (re)load history from the backend.
+  //
+  // AbortController: when the user switches timeframe/symbol before the previous
+  // fetch completes, the in-flight request is cancelled immediately. This prevents
+  // redundant Upstox API calls (rate-limit pressure) and stale data rendering.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    let cancelled = false;
+
+    const ac = new AbortController();
+
+    // Clear stale candles so ticks can't write old-symbol data into the new series
+    // while the fetch is in-flight.
+    candlesRef.current = [];
 
     // Recreate price series for the chart type.
     if (priceSeriesRef.current) chart.removeSeries(priceSeriesRef.current);
@@ -126,21 +148,38 @@ export function ChartView() {
     loadDrawings(`${symbol.symbol}:${interval}`);
 
     (async () => {
-      const res = await fetchHistory(symbol.symbol, interval, 600, symbol.instrumentKey);
-      if (cancelled || priceSeriesRef.current !== priceSeries) return;
-      const candles = res.candles;
-      candlesRef.current = candles;
-      priceSeries.setData(priceData(candles, chartType) as any);
-      volSeriesRef.current!.setData(volumeData(candles) as any);
-      chart.timeScale().fitContent();
-      const last = candles[candles.length - 1];
-      const prev = candles[candles.length - 2];
-      if (last) setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });
-      useChartStore.getState().setBarCount(candles.length);
-      useChartStore.getState().bumpData();
+      try {
+        const res = await fetchHistory(symbol.symbol, interval, 600, symbol.instrumentKey, ac.signal);
+
+        // Discard result if this effect was superseded (new symbol/interval) or aborted.
+        if (ac.signal.aborted || priceSeriesRef.current !== priceSeries) return;
+
+        // If Upstox is connected but the backend fell back to mock, warn the user.
+        if (res.source === 'mock' && useBrokerStore.getState().source === 'upstox') {
+          const msg = res.source_warning ?? `${symbol.symbol} ${interval} data unavailable from Upstox`;
+          pushToast(`⚠ Showing simulated data — ${msg}`);
+          console.warn('[ChartView] mock fallback:', msg);
+        }
+
+        const candles = res.candles;
+        if (!candles.length) return;
+        candlesRef.current = candles;
+        priceSeries.setData(priceData(candles, chartType) as any);
+        volSeriesRef.current!.setData(volumeData(candles) as any);
+        chart.timeScale().fitContent();
+        const last = candles[candles.length - 1];
+        const prev = candles[candles.length - 2];
+        if (last) setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });
+        useChartStore.getState().setBarCount(candles.length);
+        useChartStore.getState().bumpData();
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return; // normal cancellation
+        console.error('[ChartView] history fetch failed:', e);
+      }
     })();
 
-    return () => { cancelled = true; };
+    // Cleanup: abort the in-flight request so we don't hit Upstox rate limits.
+    return () => { ac.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartType, symbol.symbol, interval]);
 
@@ -191,24 +230,32 @@ export function ChartView() {
   }, [ready]);
 
   // Bottom-bar timeframe quick-select → set visible logical range.
+  // Uses actual candle timestamps so "1D" always means 1 calendar day of real bars,
+  // regardless of interval (75 bars on 5m, 375 on 1m, 1 bar on 1D, etc.).
   const rangeReq = useChartStore((st) => st.rangeReq);
   useEffect(() => {
     if (!rangeReq) return;
     const chart = chartRef.current;
     const candles = candlesRef.current;
     if (!chart || candles.length === 0) return;
-    const stepSec = (candles[1]?.time ?? candles[0].time + 86400) - candles[0].time;
-    const DAYS: Record<string, number> = { '1D': 1, '5D': 5, '1M': 22, '3M': 66, '6M': 132, YTD: 0, '1Y': 252, '5Y': 1260, All: 1e9 };
     const len = candles.length;
     if (rangeReq.label === 'All') { chart.timeScale().fitContent(); return; }
+
+    const CALENDAR_DAYS: Record<string, number> = {
+      '1D': 1, '5D': 5, '1M': 30, '3M': 91, '6M': 182, '1Y': 365, '5Y': 1825,
+    };
     let bars: number;
     if (rangeReq.label === 'YTD') {
-      const y = new Date().getUTCFullYear();
-      const idx = candles.findIndex((c) => new Date(c.time * 1000).getUTCFullYear() === y);
-      bars = idx >= 0 ? len - idx : Math.round((365 * 86400) / stepSec);
+      const yearStart = new Date(new Date().getUTCFullYear(), 0, 1).getTime() / 1000;
+      const idx = candles.findIndex((c) => c.time >= yearStart);
+      bars = idx >= 0 ? len - idx : len;
     } else {
-      bars = Math.max(2, Math.round((DAYS[rangeReq.label] * 86400) / stepSec));
+      // Find the first candle at or after (now − N calendar days).
+      const cutoffSec = Date.now() / 1000 - (CALENDAR_DAYS[rangeReq.label] ?? 30) * 86400;
+      const idx = candles.findIndex((c) => c.time >= cutoffSec);
+      bars = idx >= 0 ? len - idx : len;
     }
+    bars = Math.max(2, bars);
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, len - bars), to: len + 4 } as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeReq?.nonce]);
@@ -250,8 +297,17 @@ export function ChartView() {
   const removeCompare = useCompareStore((st) => st.remove);
   useEffect(() => { useCompareStore.getState().clear(); }, [symbol.symbol]);
 
-  // Live ticks: update the forming (last) candle in real time.
+  // Live ticks: update the forming (last) candle's OHLC in real time.
+  // New bars are NOT created from ticks — Upstox candles use IST-aligned timestamps
+  // that don't match UTC epoch math, so bar-boundary detection from tick.ts would
+  // produce spurious bars. History is refreshed on symbol/interval changes instead.
+  //
+  // MOCK derivatives (MOCK:option:… / MOCK:future:…) have no valid tick stream —
+  // the mock backend would broadcast ticks at the default ~₹1000 price, which would
+  // instantly corrupt the option/future candles and collapse the price scale.
+  // Skip the subscription for these; the static history from fetchHistory is enough.
   useEffect(() => {
+    if (symbol.instrumentKey?.startsWith('MOCK:')) return;
     const unsub = liveFeed.subscribe(symbol.symbol, (tick) => {
       if (useReplayStore.getState().active) return;
       const candles = candlesRef.current;
@@ -267,7 +323,8 @@ export function ChartView() {
       useChartStore.getState().bumpData();
     });
     return unsub;
-  }, [symbol.symbol]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol.symbol, symbol.instrumentKey]);
 
   const up = legend ? legend.close >= legend.prevClose : true;
   const chg = legend ? legend.close - legend.prevClose : 0;

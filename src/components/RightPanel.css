@@ -1,3 +1,4 @@
+/* ── Right panel (expanded) ─────────────────────────────────────────────── */
 .rightpanel {
   width: var(--rightpanel-w);
   flex: none;
@@ -5,10 +6,50 @@
   flex-direction: column;
   background: var(--bg);
   min-height: 0;
+  transition: width 0.18s ease;
 }
 
+/* ── Collapsed rail ─────────────────────────────────────────────────────── */
+.rightpanel--collapsed {
+  width: 48px;
+  overflow: hidden;
+  background: var(--toolbar);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
+  gap: 2px;
+}
+
+.rp-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.rp-expand-btn:hover { background: var(--hover); color: var(--text); }
+
+.rp-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.rp-rail-btn {
+  width: 36px;
+  height: 36px;
+}
+
+/* ── Tabs row ────────────────────────────────────────────────────────────── */
 .rp-tabs {
-  height: 38px;
+  height: 42px;
   flex: none;
   display: flex;
   align-items: center;
@@ -20,19 +61,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 30px;
+  width: 34px;
+  height: 32px;
   border-radius: var(--radius);
   color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
 }
-.rp-tab:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.rp-tab.active {
-  color: var(--accent);
-}
+.rp-tab:hover  { background: var(--hover); color: var(--text); }
+.rp-tab.active { color: var(--accent); }
 
+/* ── Watchlist ───────────────────────────────────────────────────────────── */
 .rp-watchlist {
   flex: 1 1 auto;
   min-height: 0;
@@ -43,20 +81,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 4px;
+  padding: 9px 12px 5px;
 }
 .wl-title {
   color: var(--text-strong);
   font-weight: 600;
+  font-size: var(--fs-md);
 }
-.wl-actions {
-  display: flex;
-  gap: 2px;
-}
-.icon-btn.sm {
-  width: 26px;
-  height: 26px;
-}
+.wl-actions { display: flex; gap: 2px; }
+
+.icon-btn.sm { width: 28px; height: 28px; }
 
 .wl-head,
 .wl-row {
@@ -64,45 +98,44 @@
   grid-template-columns: 1.5fr 1fr 0.9fr 0.9fr;
   align-items: center;
   gap: 4px;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: var(--fs-sm);
 }
 .wl-head {
-  height: 26px;
+  height: 28px;
   color: var(--text-dim);
   border-bottom: 1px solid var(--border);
 }
 .wl-head span:not(:first-child),
-.wl-row span:not(.wl-sym) {
-  text-align: right;
-}
+.wl-row span:not(.wl-sym) { text-align: right; }
 
 .wl-section-head {
-  padding: 8px 10px 3px;
-  font-size: 10px;
+  padding: 9px 12px 4px;
+  font-size: 11px;
   letter-spacing: 0.6px;
   color: var(--text-dim);
+  text-transform: uppercase;
 }
 
 .wl-row {
-  height: 28px;
+  height: 32px;
   cursor: pointer;
+  border-radius: 3px;
+  margin: 0 4px;
 }
-.wl-row:hover {
-  background: var(--hover);
-}
+.wl-row:hover { background: var(--hover); }
 .wl-sym {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 .wl-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   color: #fff;
   font-size: 9px;
@@ -114,98 +147,60 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--fs-sm);
 }
-.wl-last {
-  color: var(--text);
-}
+.wl-last { color: var(--text); font-size: var(--fs-sm); }
 
-/* Details card */
+/* ── Details card ────────────────────────────────────────────────────────── */
 .rp-details {
   flex: none;
   border-top: 1px solid var(--border);
-  padding: 12px 12px 14px;
-  max-height: 45%;
+  padding: 14px 14px 16px;
+  max-height: 46%;
   overflow-y: auto;
 }
-.det-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
+.det-head { display: flex; align-items: center; gap: 10px; }
 .det-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
-.det-sym {
-  color: var(--text-strong);
-  font-weight: 700;
-}
-.det-name {
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
+.det-title { display: flex; flex-direction: column; gap: 1px; }
+.det-sym  { color: var(--text-strong); font-weight: 700; font-size: var(--fs-md); }
+.det-name { color: var(--text-muted);  font-size: var(--fs-sm); }
 
 .det-quote {
   margin-top: 12px;
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 7px;
 }
 .det-price {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
 }
-.det-unit {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
+.det-unit { font-size: var(--fs-sm); color: var(--text-muted); }
+
 .det-change {
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: var(--fs-md);
   font-weight: 600;
 }
-.det-status {
-  margin-top: 8px;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-.det-update {
-  font-size: var(--fs-xs);
-  color: var(--text-dim);
-}
+.det-status { margin-top: 8px; font-size: var(--fs-sm); color: var(--text-muted); }
+.det-update { font-size: var(--fs-xs); color: var(--text-dim); }
 
-.det-news {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-}
-.news-time {
-  font-size: 10px;
-  color: var(--text-dim);
-}
-.news-text {
-  font-size: var(--fs-sm);
-  color: var(--text);
-}
-
-.det-perf {
-  margin-top: 14px;
-}
+.det-perf { margin-top: 14px; }
 .perf-title {
   color: var(--text-strong);
   font-weight: 600;
+  font-size: var(--fs-md);
   margin-bottom: 8px;
 }
 .perf-grid {
@@ -216,15 +211,8 @@
 .perf-cell {
   background: var(--panel);
   border-radius: var(--radius);
-  padding: 6px 4px;
+  padding: 7px 4px;
   text-align: center;
 }
-.perf-val {
-  font-size: var(--fs-md);
-  font-weight: 600;
-}
-.perf-label {
-  font-size: 10px;
-  color: var(--text-dim);
-  margin-top: 1px;
-}
+.perf-val   { font-size: var(--fs-md); font-weight: 600; }
+.perf-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }

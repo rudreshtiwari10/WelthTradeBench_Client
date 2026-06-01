@@ -78,7 +78,60 @@
 .ot-row:hover .ot-btn {
   display: inline-flex;
 }
-.ot-btn:hover {
-  background: var(--border-strong);
-  color: var(--text-strong);
+.ot-btn:hover { background: var(--border-strong); color: var(--text-strong); }
+.ot-btn-active { display: inline-flex !important; color: var(--accent); }
+.ot-btn-danger:hover { color: #ef5350; }
+
+/* ── Search ── */
+.ot-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
 }
+.ot-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.ot-search-input::placeholder { color: var(--text-dim); }
+.ot-search-clear {
+  background: none; border: none; color: var(--text-dim); font-size: 14px; cursor: pointer; padding: 0 2px;
+}
+.ot-search-clear:hover { color: var(--text); }
+
+/* ── Per-row actions ── */
+.ot-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+}
+.ot-row:hover .ot-actions,
+.ot-row.sel .ot-actions { display: flex; }
+
+/* ── Hidden drawing row ── */
+.ot-row.ot-hidden { opacity: 0.45; }
+.ot-row.ot-hidden .ot-name { text-decoration: line-through; }
+
+/* ── Lock icon ── */
+.ot-lock-icon { font-size: 10px; line-height: 1; }
+
+/* ── Rename input ── */
+.ot-rename {
+  flex: 1;
+  background: var(--hover);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  padding: 1px 5px;
+  outline: none;
+}
+
+/* ── Widen panel for actions ── */
+.objtree { width: 300px; }

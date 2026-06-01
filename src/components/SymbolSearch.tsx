@@ -54,19 +54,32 @@ function formatOptionSymbol(underlying: string, strike: number, type: 'CE' | 'PE
 type SearchTab = 'symbols' | 'options' | 'futures';
 
 // ─── Main component ───────────────────────────────────────────────────────
-export function SymbolSearch({ onClose, mode = 'replace' }: { onClose: () => void; mode?: 'replace' | 'compare' }) {
+export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
+  onClose: () => void;
+  mode?: 'replace' | 'compare';
+  initialQuery?: string;
+}) {
   const setSymbol = useChartStore((s) => s.setSymbol);
   const addCompare = useCompareStore((s) => s.add);
 
   const [tab, setTab] = useState<SearchTab>('symbols');
 
   // ── Symbols tab ──────────────────────────────────────────────────────
-  const [q, setQ] = useState('');
+  // initialQuery comes from typing any letter on the chart (TV-style type-to-search)
+  const [q, setQ] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hi, setHi] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (tab === 'symbols') inputRef.current?.focus(); }, [tab]);
+  useEffect(() => {
+    if (tab === 'symbols') {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      // Select all so typing a new char replaces the initial query
+      el.select();
+    }
+  }, [tab]);
 
   useEffect(() => {
     let active = true;
@@ -194,20 +207,42 @@ export function SymbolSearch({ onClose, mode = 'replace' }: { onClose: () => voi
         {/* ── SYMBOLS TAB ── */}
         {tab === 'symbols' && (
           <div className="ss-results">
-            {results.length === 0 && <div className="ss-empty">No symbols found</div>}
-            {results.map((r, i) => (
-              <button
-                key={r.symbol + r.exchange}
-                className={`ss-row ${i === hi ? 'hi' : ''}`}
-                onMouseEnter={() => setHi(i)}
-                onClick={() => chooseResult(r)}
-              >
-                <span className="ss-sym">{r.symbol}</span>
-                <span className="ss-name">{r.name}</span>
-                <span className="ss-kind">{KIND_TAG[r.kind ?? 'stock'] ?? r.kind}</span>
-                <span className="ss-exch">{r.exchange}</span>
-              </button>
-            ))}
+            {/* Section header: "Popular" when no query, "Results" when searching */}
+            {results.length > 0 && (
+              <div className="ss-section-head">
+                {q.trim() ? `Results for "${q.trim().toUpperCase()}"` : 'Popular symbols'}
+              </div>
+            )}
+            {results.length === 0 && q.trim() && (
+              <div className="ss-empty">No symbols found for "{q.trim().toUpperCase()}"</div>
+            )}
+            {results.map((r, i) => {
+              // Highlight matched portion of symbol
+              const qUp = q.trim().toUpperCase();
+              const symUp = r.symbol.toUpperCase();
+              const matchIdx = qUp ? symUp.indexOf(qUp) : -1;
+              return (
+                <button
+                  key={r.symbol + r.exchange}
+                  className={`ss-row ${i === hi ? 'hi' : ''}`}
+                  onMouseEnter={() => setHi(i)}
+                  onClick={() => chooseResult(r)}
+                >
+                  <span className="ss-sym">
+                    {matchIdx >= 0 ? (
+                      <>
+                        {r.symbol.slice(0, matchIdx)}
+                        <mark className="ss-match">{r.symbol.slice(matchIdx, matchIdx + qUp.length)}</mark>
+                        {r.symbol.slice(matchIdx + qUp.length)}
+                      </>
+                    ) : r.symbol}
+                  </span>
+                  <span className="ss-name">{r.name}</span>
+                  <span className={`ss-kind ss-kind-${r.kind ?? 'stock'}`}>{KIND_TAG[r.kind ?? 'stock'] ?? r.kind}</span>
+                  <span className="ss-exch">{r.exchange}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 

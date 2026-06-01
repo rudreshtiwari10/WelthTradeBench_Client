@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../icons/Icon';
 import { TOOL_GROUPS, groupTools, type ToolDef, type ToolGroup } from '../drawings/tools';
-import { useDrawingStore, type Tool } from '../state/drawingStore';
+import { useDrawingStore, type Tool, type FavDef } from '../state/drawingStore';
 import { useUiStore } from '../state/uiStore';
 import './LeftToolbar.css';
 
 export function LeftToolbar() {
-  const { activeTool, setTool, magnet, stayInDrawing, locked, hidden, toggleMagnet, toggleStay, toggleLocked, toggleHidden, clearAll } = useDrawingStore();
+  const {
+    activeTool, setTool, magnet, stayInDrawing, locked, hidden,
+    toggleMagnet, toggleStay, toggleLocked, toggleHidden, clearAll,
+    favorites, toggleFavorite, isFavorite,
+  } = useDrawingStore();
   const { objectTreeOpen, toggleObjectTree } = useUiStore();
   const [collapsed, setCollapsed] = useState(false);
   const [flyout, setFlyout] = useState<string | null>(null);
-  // Remember the last-picked tool per group so the rail shows its icon.
   const [picked, setPicked] = useState<Record<string, IconName>>({});
+
+  // drag-to-reorder favorites
+  const dragFavIdx = useRef<number | null>(null);
 
   if (collapsed) {
     return (
@@ -23,7 +29,7 @@ export function LeftToolbar() {
     );
   }
 
-  const groupIcon = (g: ToolGroup): IconName => picked[g.id] || g.icon;
+  const groupIcon   = (g: ToolGroup): IconName => picked[g.id] || g.icon;
   const groupActive = (g: ToolGroup) => groupTools(g).some((t) => t.tool === activeTool);
 
   const choose = (g: ToolGroup, def: ToolDef) => {
@@ -32,8 +38,24 @@ export function LeftToolbar() {
     setFlyout(null);
   };
 
+  const chooseFav = (fav: FavDef) => {
+    setTool(fav.tool, fav.text ?? null);
+    setFlyout(null);
+  };
+
+  // Drag-to-reorder: swap favorites array positions using store
+  const reorderFavs = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const next = [...favorites];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    // Write back through store via a bulk-replace helper
+    useDrawingStore.getState().setFavorites(next);
+  };
+
   return (
     <aside className="leftbar">
+      {/* ── Tool groups (cursor → emoji) ── */}
       <div className="leftbar-group">
         {TOOL_GROUPS.map((g) => (
           <ToolGroupButton
@@ -46,30 +68,67 @@ export function LeftToolbar() {
             onPick={(def) => choose(g, def)}
             onClose={() => setFlyout(null)}
             activeTool={activeTool}
+            isFavorite={isFavorite}
+            onToggleFavorite={toggleFavorite}
           />
+        ))}
+      </div>
+
+      {/* ── Divider ── */}
+      <div className="leftbar-divider" />
+
+      {/* ── Favorites section (below emoji) ── */}
+      <div className="leftbar-favs-section">
+        <div className="leftbar-favs-label" title="Starred tools — drag to reorder, ★ to add from any flyout">
+          ★
+        </div>
+        {favorites.length === 0 && (
+          <div className="leftbar-favs-empty" title="Star any tool in the flyout menus to add it here">+</div>
+        )}
+        {favorites.map((fav, idx) => (
+          <button
+            key={fav.label}
+            className={`tool-btn icon-btn leftbar-fav-btn ${activeTool === fav.tool ? 'active' : ''}`}
+            title={`${fav.label}\nRight-click to remove`}
+            draggable
+            onDragStart={() => { dragFavIdx.current = idx; }}
+            onDragOver={(e) => { e.preventDefault(); }}
+            onDrop={() => { if (dragFavIdx.current !== null) { reorderFavs(dragFavIdx.current, idx); dragFavIdx.current = null; } }}
+            onClick={() => chooseFav(fav)}
+            onContextMenu={(e) => { e.preventDefault(); toggleFavorite(fav); }}
+          >
+            {fav.text
+              ? <span className="leftbar-fav-emoji">{fav.text}</span>
+              : <Icon name={fav.icon} size={20} />}
+          </button>
         ))}
       </div>
 
       <div className="leftbar-spacer" />
 
+      {/* ── Bottom utility buttons ── */}
       <div className="leftbar-group">
-        <button className={`icon-btn ${magnet ? 'active' : ''}`} title="Magnet mode" onClick={toggleMagnet}><Icon name="magnet" size={20} /></button>
+        <button className={`icon-btn ${magnet ? 'active' : ''}`} title="Magnet mode (snap to OHLC)" onClick={toggleMagnet}><Icon name="magnet" size={20} /></button>
         <button className={`icon-btn ${stayInDrawing ? 'active' : ''}`} title="Stay in drawing mode" onClick={toggleStay}><Icon name="ray" size={20} /></button>
-        <button className={`icon-btn ${locked ? 'active' : ''}`} title="Lock all drawing tools" onClick={toggleLocked}><Icon name="lock" size={18} /></button>
+        <button className={`icon-btn ${locked ? 'active' : ''}`} title="Lock all drawings" onClick={toggleLocked}><Icon name="lock" size={18} /></button>
         <button className={`icon-btn ${hidden ? 'active' : ''}`} title={hidden ? 'Show all drawings' : 'Hide all drawings'} onClick={toggleHidden}><Icon name={hidden ? 'eyeOff' : 'eye'} size={18} /></button>
-        <button className={`icon-btn ${objectTreeOpen ? 'active' : ''}`} title="Show objects tree" onClick={toggleObjectTree}><Icon name="layout" size={18} /></button>
+        <button className={`icon-btn ${objectTreeOpen ? 'active' : ''}`} title="Object tree" onClick={toggleObjectTree}><Icon name="layout" size={18} /></button>
         <button className="icon-btn" title="Remove all drawings" onClick={() => { if (confirm('Remove all drawings?')) clearAll(); }}><Icon name="trash" size={18} /></button>
-        <button className="icon-btn" title="Hide drawing toolbar" onClick={() => setCollapsed(true)}><Icon name="chevronLeft" size={18} /></button>
+        <button className="icon-btn" title="Collapse toolbar" onClick={() => setCollapsed(true)}><Icon name="chevronLeft" size={18} /></button>
       </div>
     </aside>
   );
 }
 
+// ── ToolGroupButton ────────────────────────────────────────────────────────
+
 function ToolGroupButton({
-  group, icon, active, open, onToggle, onPick, onClose, activeTool,
+  group, icon, active, open, onToggle, onPick, onClose, activeTool, isFavorite, onToggleFavorite,
 }: {
   group: ToolGroup; icon: IconName; active: boolean; open: boolean;
   onToggle: () => void; onPick: (def: ToolDef) => void; onClose: () => void; activeTool: Tool;
+  isFavorite: (label: string) => boolean;
+  onToggleFavorite: (def: FavDef) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -79,8 +138,8 @@ function ToolGroupButton({
     return () => document.removeEventListener('mousedown', h);
   }, [open, onClose]);
 
-  const tools = groupTools(group);
-  const single = tools.length === 1;
+  const tools   = groupTools(group);
+  const single  = tools.length === 1;
   const isEmoji = group.id === 'emoji';
 
   return (
@@ -102,15 +161,30 @@ function ToolGroupButton({
               {isEmoji ? (
                 <div className="emoji-grid">
                   {sec.tools.map((t, i) => (
-                    <button key={i} className="emoji-cell" title={`Place ${t.label}`} onClick={() => onPick(t)}>{t.text}</button>
+                    <button
+                      key={i}
+                      className={`emoji-cell ${isFavorite(t.label) ? 'fav' : ''}`}
+                      title={`${t.label}${isFavorite(t.label) ? ' · Right-click to unfavourite' : ' · Right-click to favourite'}`}
+                      onClick={() => onPick(t)}
+                      onContextMenu={(e) => { e.preventDefault(); onToggleFavorite({ label: t.label, tool: t.tool, icon: t.icon, text: t.text }); }}
+                    >{t.text}</button>
                   ))}
                 </div>
               ) : (
                 sec.tools.map((t, i) => (
-                  <button key={i} className={`flyout-item ${activeTool === t.tool ? 'active' : ''}`} onClick={() => onPick(t)}>
+                  <button
+                    key={i}
+                    className={`flyout-item ${activeTool === t.tool ? 'active' : ''}`}
+                    onClick={() => onPick(t)}
+                  >
                     <span className="fi-icon"><Icon name={t.icon} size={18} /></span>
                     <span className="fi-label">{t.label}</span>
                     {t.shortcut && <span className="fi-shortcut">{t.shortcut}</span>}
+                    <button
+                      className={`fi-star ${isFavorite(t.label) ? 'on' : ''}`}
+                      title={isFavorite(t.label) ? 'Remove from favourites' : 'Add to favourites'}
+                      onClick={(e) => { e.stopPropagation(); onToggleFavorite({ label: t.label, tool: t.tool, icon: t.icon, text: t.text }); }}
+                    >★</button>
                   </button>
                 ))
               )}
