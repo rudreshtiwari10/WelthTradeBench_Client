@@ -1,19 +1,16 @@
 /**
  * OptionsChainPanel — floating panel for one-click options trading.
  *
- * Workflow:
- *  1. Pick underlying (NIFTY, BANKNIFTY, …), expiry, lot size, and side (BUY/SELL).
- *  2. Click a CE or PE cell → trade is placed instantly at market price.
- *  3. Entry + SL + TP price lines are created on the UNDERLYING INDEX chart
- *     (not on the option chart). SL/TP default to ±1.5 % of the current index price.
- *  4. The underlying chart becomes active so the user sees the SL/TP lines immediately.
+ * Expiry dates are fetched from the backend (/api/derivatives/expiries) so they
+ * always match what Upstox actually has listed.  In mock mode the backend returns
+ * computed dates; in Upstox mode it returns the real listed contract expiries.
  *
- * Works in both mock (paper) and live (Upstox) mode.
+ * Real-time LTPs: after each chain fetch, all Upstox instrument keys are subscribed
+ * via liveFeed.subscribeKeys() and LTPs update tick-by-tick.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchDerivativesChain } from '../data/dataService';
+import { fetchDerivativesChain, fetchDerivativesExpiries, liveFeed } from '../data/dataService';
 import type { DerivChainRow } from '../data/dataService';
-import { liveFeed } from '../data/dataService';
 import { lotSize } from '../data/options';
 import { usePositionsStore } from '../state/positionsStore';
 import { usePriceLinesStore } from '../state/priceLinesStore';
@@ -37,82 +34,92 @@ const UL_INFO: Record<string, Pick<SymbolInfo, 'name' | 'exchange' | 'kind'>> = 
   BANKEX:     { name: 'BSE Bankex',            exchange: 'BSE', kind: 'index' },
 };
 
-// Expiry weekday (0=Sun…6=Sat) per underlying
-const EXPIRY_DOW: Record<string, number> = {
-  NIFTY: 4, BANKNIFTY: 3, FINNIFTY: 2, MIDCPNIFTY: 1, SENSEX: 5, BANKEX: 1,
-};
+// Which underlyings have weekly options (SEBI 2023: one per exchange)
+const WEEKLY_UNDERLYING = new Set(['NIFTY', 'SENSEX']);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 interface ExpiryOpt { label: string; value: string; days: number }
 
-function getExpiries(underlying: string, n = 6): ExpiryOpt[] {
-  const dow = EXPIRY_DOW[underlying.toUpperCase()] ?? 4;
-  const results: ExpiryOpt[] = [];
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  while (results.length < n) {
-    const add = (dow - d.getDay() + 7) % 7 || 7;
-    d.setDate(d.getDate() + add);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const days  = Math.max(0, Math.round((d.getTime() - Date.now()) / 86_400_000));
-    const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-    results.push({ label, value, days });
-  }
-  return results;
+/** Convert a YYYY-MM-DD string to a display chip option. */
+function toExpiryOpt(dateStr: string): ExpiryOpt {
+  // Parse as UTC midnight to avoid timezone shifts in label
+  const d    = new Date(dateStr + 'T00:00:00Z');
+  const days = Math.max(0, Math.round((d.getTime() - Date.now()) / 86_400_000));
+  const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  return { label, value: dateStr, days };
 }
 
 function buildContractSymbol(underlying: string, expiry: string, strike: number, type: 'CE' | 'PE'): string {
-  const d = new Date(expiry + 'T00:00:00Z');
+  const d   = new Date(expiry + 'T00:00:00Z');
   const mon = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }).toUpperCase();
   return `${underlying}${d.getUTCDate()}${mon}${strike}${type}`;
 }
 
-const fmt2 = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt2    = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtSpot = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 // ─── Component ────────────────────────────────────────────────────────────
 
 export function OptionsChainPanel() {
-  const closeChain   = useUiStore((s) => s.closeChain);
-  const setSymbol    = useChartStore((s) => s.setSymbol);
-  const currentSym   = useChartStore((s) => s.symbol.symbol);
+  const closeChain       = useUiStore((s) => s.closeChain);
+  const setSymbol        = useChartStore((s) => s.setSymbol);
+  const currentSym       = useChartStore((s) => s.symbol.symbol);
 
-  const addPaperPos  = usePositionsStore((s) => s.add);
-  const addLines     = usePriceLinesStore((s) => s.addEntryWithSlTp);
-  const pushToast    = useToastStore((s) => s.push);
-  const brokerSource = useBrokerStore((s) => s.source);
-  const brokerSandbox = useBrokerStore((s) => s.sandbox);
+  const addPaperPos      = usePositionsStore((s) => s.add);
+  const addLines         = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const pushToast        = useToastStore((s) => s.push);
+  const brokerSource     = useBrokerStore((s) => s.source);
+  const brokerSandbox    = useBrokerStore((s) => s.sandbox);
   const brokerPlaceOrder = useBrokerStore((s) => s.placeOrder);
 
   const isLive = brokerSource === 'upstox';
 
   // ── Panel state ──────────────────────────────────────────────────────
   const [underlying, setUnderlying] = useState('NIFTY');
-  const [expiries, setExpiries] = useState<ExpiryOpt[]>(() => getExpiries('NIFTY'));
-  const [expiryIdx, setExpiryIdx] = useState(0);
-  const [lots, setLots] = useState(1);
-  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [expiries, setExpiries]     = useState<ExpiryOpt[]>([]);
+  const [expiryIdx, setExpiryIdx]   = useState(0);
+  const [lots, setLots]             = useState(1);
+  const [side, setSide]             = useState<'buy' | 'sell'>('buy');
 
   // Chain data
-  const [chain, setChain] = useState<DerivChainRow[]>([]);
-  const [chainSpot, setChainSpot] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [chain, setChain]           = useState<DerivChainRow[]>([]);
+  const [chainSpot, setChainSpot]   = useState(0);
+  const [loading, setLoading]       = useState(false);
+  const [chainError, setChainError] = useState<string | null>(null);
 
-  // Live index spot from feed
+  // Live index spot from the WebSocket feed
   const [liveSpot, setLiveSpot] = useState(0);
   const spotRef = useRef(0);
 
   // Placing state: "24000CE" | "24000PE" | null
   const [placing, setPlacing] = useState<string | null>(null);
 
-  // ── Expiry options reset when underlying changes ──────────────────────
+  // Ref for option-tick subscription cleanup
+  const optionUnsubRef = useRef<(() => void) | null>(null);
+
+  // ── Fetch real expiry dates from backend on underlying change ─────────
   useEffect(() => {
-    const exps = getExpiries(underlying);
-    setExpiries(exps);
+    setExpiries([]);
     setExpiryIdx(0);
     setChain([]);
     setChainSpot(0);
+    setChainError(null);
+
+    let cancelled = false;
+    fetchDerivativesExpiries(underlying)
+      .then((res) => {
+        if (cancelled) return;
+        const opts = res.expiries.map(toExpiryOpt);
+        setExpiries(opts.length ? opts : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Network / server error — leave expiries empty (chain fetch will surface the error)
+        setExpiries([]);
+      });
+
+    return () => { cancelled = true; };
   }, [underlying]);
 
   // ── Subscribe to live index spot ──────────────────────────────────────
@@ -125,36 +132,90 @@ export function OptionsChainPanel() {
     return unsub;
   }, [underlying]);
 
+  // ── Real-time option contract tick subscription ───────────────────────
+  const subscribeToOptionTicks = useCallback((rows: DerivChainRow[]) => {
+    // Tear down previous subscription
+    if (optionUnsubRef.current) {
+      optionUnsubRef.current();
+      optionUnsubRef.current = null;
+    }
+
+    // Only real Upstox instrument keys (not MOCK:… placeholders)
+    const realKeys = rows
+      .flatMap((r) => [r.callKey, r.putKey])
+      .filter((k): k is string => !!k && !k.startsWith('MOCK:'));
+
+    if (realKeys.length === 0) return;
+
+    // Build stable key → row-index + side lookup
+    const keyMap = new Map<string, { idx: number; side: 'call' | 'put' }>();
+    rows.forEach((row, i) => {
+      if (row.callKey && !row.callKey.startsWith('MOCK:'))
+        keyMap.set(row.callKey, { idx: i, side: 'call' });
+      if (row.putKey && !row.putKey.startsWith('MOCK:'))
+        keyMap.set(row.putKey, { idx: i, side: 'put' });
+    });
+
+    optionUnsubRef.current = liveFeed.subscribeKeys(realKeys, (key, ltp) => {
+      if (ltp <= 0) return;
+      const entry = keyMap.get(key);
+      if (!entry) return;
+      setChain((prev) => {
+        const row = prev[entry.idx];
+        if (!row) return prev;
+        if (entry.side === 'call' && row.callLtp === ltp) return prev;
+        if (entry.side === 'put'  && row.putLtp  === ltp) return prev;
+        const next = [...prev];
+        next[entry.idx] = entry.side === 'call'
+          ? { ...row, callLtp: ltp }
+          : { ...row, putLtp:  ltp };
+        return next;
+      });
+    });
+  }, []); // stable — deps are only refs + setChain
+
+  // Cleanup option subscriptions on unmount
+  useEffect(() => () => { optionUnsubRef.current?.(); }, []);
+
   // ── Fetch option chain ────────────────────────────────────────────────
   const fetchChain = useCallback(async () => {
     const exp = expiries[expiryIdx];
     if (!exp) return;
     setLoading(true);
+    setChainError(null);
     try {
       const res = await fetchDerivativesChain(underlying, exp.value);
       setChain(res.chains);
       setChainSpot(res.spot ?? 0);
+      subscribeToOptionTicks(res.chains);
     } catch (e: any) {
       setChain([]);
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      useToastStore.getState().push(`Failed to load option chain: ${msg}`);
+      const raw  = e instanceof Error ? e.message : String(e);
+      // 404 = no listed contracts for this expiry; 502 = Upstox API error
+      const msg  = raw.includes('404')
+        ? `No options listed for ${exp.label} — pick another expiry.`
+        : `Failed to load chain: ${raw}`;
+      setChainError(msg);
+      // Only toast for non-404 (404 is expected when user browses expiries)
+      if (!raw.includes('404')) {
+        useToastStore.getState().push(msg);
+      }
     } finally {
       setLoading(false);
     }
-  }, [underlying, expiryIdx, expiries]);
+  }, [underlying, expiryIdx, expiries, subscribeToOptionTicks]);
 
   useEffect(() => { fetchChain(); }, [fetchChain]);
 
-  // Auto-refresh chain every 30 s
+  // Auto-refresh every 30 s to keep OI fresh (ticks handle LTPs in real-time)
   useEffect(() => {
     const id = setInterval(fetchChain, 30_000);
     return () => clearInterval(id);
   }, [fetchChain]);
 
-  // ── Effective spot (live feed > chain API) ────────────────────────────
+  // ── Effective spot (live WebSocket > chain REST response) ─────────────
   const effectiveSpot = liveSpot > 0 ? liveSpot : chainSpot;
 
-  // ATM strike detection
   const atmStrike = effectiveSpot > 0 && chain.length > 0
     ? chain.reduce((best, r) =>
         Math.abs(r.strike - effectiveSpot) < Math.abs(best - effectiveSpot) ? r.strike : best,
@@ -174,10 +235,10 @@ export function OptionsChainPanel() {
     const indexSpot = effectiveSpot;
     if (!indexSpot) { pushToast('Waiting for spot price — try again'); return; }
 
-    const ls        = lotSize(underlying);
-    const qty       = lots * ls;
-    const contract  = buildContractSymbol(underlying, exp.value, row.strike, optType);
-    const expiryMs  = new Date(exp.value + 'T00:00:00Z').getTime();
+    const ls         = lotSize(underlying);
+    const qty        = lots * ls;
+    const contract   = buildContractSymbol(underlying, exp.value, row.strike, optType);
+    const expiryMs   = new Date(exp.value + 'T00:00:00Z').getTime();
     const placingKey = `${row.strike}${optType}`;
 
     setPlacing(placingKey);
@@ -197,7 +258,6 @@ export function OptionsChainPanel() {
         const label = brokerSandbox ? '[SANDBOX] ' : '';
         pushToast(`${label}${side.toUpperCase()} ${lots}L ${contract} @ ₹${fmt2(ltp)}`);
       } else {
-        // Paper trade
         positionId = addPaperPos({
           symbol: contract,
           underlying,
@@ -212,33 +272,31 @@ export function OptionsChainPanel() {
         pushToast(`Paper ${side.toUpperCase()} ${lots}L ${contract} @ ₹${fmt2(ltp)} · View ${underlying} for SL/TP`);
       }
 
-      // Place entry + SL + TP lines on the UNDERLYING INDEX chart
       addLines({
         positionId,
-        symbol:              contract,
-        underlying,           // lines appear only when viewing this index
+        symbol:             contract,
+        underlying,
         side,
         qty,
         lots,
-        price:               indexSpot,  // entry marker at current index level
-        entryPrice:          indexSpot,  // baseline for SL/TP % display
-        optionEntryPremium:  ltp,        // for estimated P&L on handles
-        strike:              row.strike,
+        price:              indexSpot,
+        entryPrice:         indexSpot,
+        optionEntryPremium: ltp,
+        strike:             row.strike,
         optType,
-        expiryDate:          expiryMs,
-        instrumentKey:       key,
+        expiryDate:         expiryMs,
+        instrumentKey:      key,
       });
 
-      // Switch to the underlying chart so user sees SL/TP immediately
       if (currentSym !== underlying) {
         const info = UL_INFO[underlying] ?? { name: underlying, exchange: 'NSE', kind: 'index' as const };
         setSymbol({ symbol: underlying, ...info });
       }
 
     } catch (e) {
-      const raw = e instanceof Error ? e.message : 'Unknown error';
+      const raw  = e instanceof Error ? e.message : 'Unknown error';
       const hint = /margin|fund|insufficient/i.test(raw) ? ' — insufficient margin'
-        : /market.*close|after.*hour/i.test(raw) ? ' — market closed' : '';
+                 : /market.*close|after.*hour/i.test(raw) ? ' — market closed' : '';
       pushToast(`Order failed: ${raw}${hint}`);
     } finally {
       setPlacing(null);
@@ -246,7 +304,8 @@ export function OptionsChainPanel() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
-  const exp = expiries[expiryIdx];
+  const exp       = expiries[expiryIdx];
+  const isMonthly = !WEEKLY_UNDERLYING.has(underlying.toUpperCase());
 
   return (
     <div className="ocp-panel">
@@ -272,13 +331,19 @@ export function OptionsChainPanel() {
       {/* ── Controls ── */}
       <div className="ocp-controls">
         <div className="ocp-expiry-chips">
+          {expiries.length === 0 && (
+            <span className="ocp-expiry-loading">Loading expiries…</span>
+          )}
           {expiries.map((e, i) => (
             <button
               key={e.value}
               className={`ocp-chip ${expiryIdx === i ? 'active' : ''}`}
               onClick={() => setExpiryIdx(i)}
-              title={`${e.days}d`}
-            >{e.label}</button>
+              title={`${e.days}d${isMonthly ? ' · monthly' : ''}`}
+            >
+              {e.label}
+              {isMonthly && <span className="ocp-chip-mo">M</span>}
+            </button>
           ))}
         </div>
         <div className="ocp-trade-ctrl">
@@ -313,8 +378,15 @@ export function OptionsChainPanel() {
         </div>
         <div className="ocp-chain-body">
           {loading && <div className="ocp-empty">Loading chain…</div>}
-          {!loading && chain.length === 0 && <div className="ocp-empty">No data</div>}
-          {!loading && chain.map((row) => {
+          {!loading && chainError && (
+            <div className="ocp-empty ocp-chain-err">{chainError}</div>
+          )}
+          {!loading && !chainError && chain.length === 0 && (
+            <div className="ocp-empty">
+              {expiries.length === 0 ? 'Select an expiry' : 'No data'}
+            </div>
+          )}
+          {!loading && !chainError && chain.map((row) => {
             const isAtm   = row.strike === atmStrike;
             const ceItm   = effectiveSpot > 0 && row.strike < effectiveSpot;
             const peItm   = effectiveSpot > 0 && row.strike > effectiveSpot;

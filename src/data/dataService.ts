@@ -58,15 +58,19 @@ export interface Tick {
 }
 
 type TickHandler = (t: Tick) => void;
+type KeyTickHandler = (key: string, ltp: number, ts: number) => void;
 
 /**
  * Singleton live-feed connection to the backend `/ws`. Auto-reconnects and
  * re-subscribes. Components subscribe to a symbol and receive ticks.
+ * Option contract ticks are subscribed by instrument key via subscribeKeys().
  */
 class LiveFeed {
   private ws: WebSocket | null = null;
   private handlers = new Map<string, Set<TickHandler>>();
+  private keyHandlers = new Map<string, Set<KeyTickHandler>>();
   private wanted = new Set<string>();
+  private wantedKeys = new Set<string>();
   private ready = false;
   private reconnectTimer: number | null = null;
 
@@ -93,10 +97,13 @@ class LiveFeed {
 
     this.ws = new WebSocket(wsUrl);
 
-
     this.ws.onopen = () => {
       this.ready = true;
       for (const sym of this.wanted) this.send({ type: 'sub', symbol: sym });
+      // Re-subscribe option keys after reconnect
+      if (this.wantedKeys.size > 0) {
+        this.send({ type: 'sub_options', keys: Array.from(this.wantedKeys) });
+      }
     };
     this.ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
@@ -104,6 +111,8 @@ class LiveFeed {
         this.mode = msg.mode;
       } else if (msg.type === 'tick') {
         this.handlers.get(msg.symbol)?.forEach((h) => h(msg));
+      } else if (msg.type === 'option_tick') {
+        this.keyHandlers.get(msg.key)?.forEach((h) => h(msg.key, msg.ltp, msg.ts));
       }
     };
     this.ws.onclose = () => {
@@ -143,6 +152,38 @@ class LiveFeed {
       }
     };
   }
+
+  /** Subscribe to real-time LTP ticks for specific option instrument keys. */
+  subscribeKeys(keys: string[], handler: KeyTickHandler): () => void {
+    this.connect();
+    const newKeys: string[] = [];
+    for (const key of keys) {
+      if (!this.keyHandlers.has(key)) this.keyHandlers.set(key, new Set());
+      this.keyHandlers.get(key)!.add(handler);
+      if (!this.wantedKeys.has(key)) {
+        this.wantedKeys.add(key);
+        newKeys.push(key);
+      }
+    }
+    if (newKeys.length > 0) {
+      this.send({ type: 'sub_options', keys: newKeys });
+    }
+    return () => {
+      const toUnsub: string[] = [];
+      for (const key of keys) {
+        const set = this.keyHandlers.get(key);
+        set?.delete(handler);
+        if (set && set.size === 0) {
+          this.keyHandlers.delete(key);
+          this.wantedKeys.delete(key);
+          toUnsub.push(key);
+        }
+      }
+      if (toUnsub.length > 0) {
+        this.send({ type: 'unsub_options', keys: toUnsub });
+      }
+    };
+  }
 }
 
 export const liveFeed = new LiveFeed();
@@ -173,6 +214,16 @@ export interface FutureRow {
   ltp: number;
   instrumentKey: string;
   kind: string;
+}
+
+export async function fetchDerivativesExpiries(
+  underlying: string,
+): Promise<{ source: string; underlying: string; expiries: string[] }> {
+  const r = await fetch(
+    `${API_BASE}/api/derivatives/expiries?underlying=${encodeURIComponent(underlying)}`,
+  );
+  if (!r.ok) throw new Error(`derivatives/expiries ${r.status}`);
+  return r.json();
 }
 
 export async function fetchDerivativesChain(

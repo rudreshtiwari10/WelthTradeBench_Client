@@ -101,6 +101,14 @@
   border-color: #2962ff;
   color: #2962ff;
 }
+.ocp-chip-mo {
+  font-size: 8px;
+  font-weight: 800;
+  margin-left: 2px;
+  vertical-align: super;
+  opacity: 0.7;
+  letter-spacing: 0;
+}
 .ocp-trade-ctrl {
   display: flex;
   align-items: center;
@@ -262,6 +270,17 @@
   padding: 24px 0;
   font-size: var(--fs-xs);
   color: var(--text-dim);
+}
+.ocp-chain-err {
+  color: #ef5350;
+  padding: 16px 12px;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+.ocp-expiry-loading {
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 2px 4px;
 }
 
 /* ── Footer ── */
