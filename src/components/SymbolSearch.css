@@ -321,6 +321,28 @@
   letter-spacing: 0.04em;
 }
 
+.ss-kind-commodity { background: rgba(255, 152, 0, 0.18); color: #e65100; }
+
+/* ── Futures section toggle ── */
+.ss-fut-section-toggle {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.ss-fut-section-btn {
+  flex: 1;
+  height: 32px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.ss-fut-section-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ss-fut-section-btn:hover:not(.active) { color: var(--text); background: var(--hover); }
+
+/* Allow commodity chip row to wrap (more chips) */
+.ss-ul-row-wrap { flex-wrap: wrap; padding-bottom: 8px; }
+
 /* ── Futures list ── */
 .ss-fut-list {
   overflow-y: auto;

@@ -158,6 +158,37 @@
   color: var(--text-dim);
 }
 
+/* ── ATM Depth Selector ── */
+.ocp-depth-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.ocp-depth-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+.ocp-depth-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ocp-depth-chip:hover { background: var(--hover); color: var(--text); }
+.ocp-depth-chip.active {
+  background: rgba(41, 98, 255, 0.18);
+  border-color: #2962ff;
+  color: #2962ff;
+}
+
 /* ── Chain table ── */
 .ocp-chain-wrap {
   display: flex;
@@ -282,6 +313,110 @@
   color: var(--text-dim);
   padding: 2px 4px;
 }
+
+/* ── Selected cell highlight (pending order) ── */
+.ocp-ce-cell.selected,
+.ocp-pe-cell.selected {
+  outline: 2px solid;
+  outline-offset: -2px;
+}
+.ocp-ce-cell.selected.buy,
+.ocp-pe-cell.selected.buy  { outline-color: #26a69a; background: rgba(38,166,154,0.22); }
+.ocp-ce-cell.selected.sell,
+.ocp-pe-cell.selected.sell { outline-color: #ef5350; background: rgba(239,83,80,0.22); }
+
+/* ── Pending Order Bar ── */
+.ocp-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: rgba(41, 98, 255, 0.06);
+  flex-shrink: 0;
+  gap: 8px;
+  animation: ocp-slide-in 0.14s ease;
+}
+@keyframes ocp-slide-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ocp-pending-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+.ocp-pending-type {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+.ocp-pending-type.ce { background: rgba(41,98,255,0.18); color: #2962ff; }
+.ocp-pending-type.pe { background: rgba(156,39,176,0.18); color: #ab47bc; }
+.ocp-pending-contract {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ocp-pending-ltp {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.ocp-pending-side {
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+.ocp-pending-side.buy  { color: #26a69a; }
+.ocp-pending-side.sell { color: #ef5350; }
+.ocp-pending-lots {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ocp-pending-btns {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.ocp-pending-cancel {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.ocp-pending-cancel:hover { border-color: #ef5350; color: #ef5350; }
+.ocp-pending-place {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 14px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.ocp-pending-place.buy  { background: rgba(38,166,154,0.9); color: #fff; }
+.ocp-pending-place.sell { background: rgba(239,83,80,0.9);  color: #fff; }
+.ocp-pending-place:hover:not(:disabled) { filter: brightness(1.1); }
+.ocp-pending-place:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Footer ── */
 .ocp-footer {

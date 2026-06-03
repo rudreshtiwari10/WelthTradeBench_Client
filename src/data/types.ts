@@ -31,5 +31,5 @@ export interface SymbolInfo {
   name: string;         // e.g. "Nifty 50 Index" | "NIFTY 24000 CE 28 Nov"
   exchange: string;     // e.g. "NSE" | "NSE_FO"
   instrumentKey?: string; // Upstox key OR "MOCK:option:..." for derivatives
-  kind?: 'index' | 'stock' | 'future' | 'option' | 'crypto';
+  kind?: 'index' | 'stock' | 'future' | 'option' | 'crypto' | 'commodity';
 }

@@ -16,6 +16,7 @@ import { usePositionsStore } from '../state/positionsStore';
 import type { Position } from '../state/positionsStore';
 import { useBrokerStore } from '../state/brokerStore';
 import { usePriceLinesStore } from '../state/priceLinesStore';
+import { useSlTpPopupStore } from '../state/slTpPopupStore';
 import type { BrokerPosition } from '../data/brokerService';
 import { liveFeed } from '../data/dataService';
 import { optionPremium } from '../data/options';
@@ -338,19 +339,14 @@ function PaperPosRow({ p, onRemove }: { p: Position; onRemove: (id: string) => v
   const pnl = (cur - p.price) * p.qty * (p.side === 'buy' ? 1 : -1);
   const pnlUp = pnl >= 0;
 
-  const setSl = usePriceLinesStore((s) => s.setSl);
-  const setTp = usePriceLinesStore((s) => s.setTp);
-
-  const promptSl = () => {
-    const val = window.prompt(`Set SL price for ${p.symbol} (entry ₹${p.price.toFixed(2)}):`, (p.price * (p.side === 'buy' ? 0.80 : 1.20)).toFixed(2));
-    const n = Number(val);
-    if (val && isFinite(n) && n > 0) setSl(p.id, n);
-  };
-  const promptTp = () => {
-    const val = window.prompt(`Set TP price for ${p.symbol} (entry ₹${p.price.toFixed(2)}):`, (p.price * (p.side === 'buy' ? 1.30 : 0.70)).toFixed(2));
-    const n = Number(val);
-    if (val && isFinite(n) && n > 0) setTp(p.id, n);
-  };
+  const promptSl = () => useSlTpPopupStore.getState().open({
+    posId: p.id, type: 'sl', symbol: p.symbol, entryPrice: p.price, side: p.side,
+    suggestedPrice: parseFloat((p.price * (p.side === 'buy' ? 0.80 : 1.20)).toFixed(2)),
+  });
+  const promptTp = () => useSlTpPopupStore.getState().open({
+    posId: p.id, type: 'tp', symbol: p.symbol, entryPrice: p.price, side: p.side,
+    suggestedPrice: parseFloat((p.price * (p.side === 'buy' ? 1.30 : 0.70)).toFixed(2)),
+  });
 
   return (
     <div className="pos-row">
@@ -512,6 +508,87 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// SL / TP INLINE CHART POPUP
+// ─────────────────────────────────────────────────────────────────────────
+
+function SlTpPopup() {
+  const popup     = useSlTpPopupStore((s) => s.popup);
+  const editPrice = useSlTpPopupStore((s) => s.editPrice);
+  const close     = useSlTpPopupStore((s) => s.close);
+  const setEdit   = useSlTpPopupStore((s) => s.setEditPrice);
+  const setSl     = usePriceLinesStore((s) => s.setSl);
+  const setTp     = usePriceLinesStore((s) => s.setTp);
+
+  if (!popup) return null;
+
+  const price   = parseFloat(editPrice);
+  const isValid = isFinite(price) && price > 0;
+  const pct     = popup.entryPrice > 0 ? ((price - popup.entryPrice) / popup.entryPrice) * 100 : 0;
+  const isSl    = popup.type === 'sl';
+
+  const confirm = () => {
+    if (!isValid) return;
+    if (isSl) setSl(popup.posId, price);
+    else      setTp(popup.posId, price);
+    close();
+  };
+
+  return (
+    <>
+      <div className="sltp-overlay" onClick={close} />
+      <div className="sltp-popup">
+        <div className="sltp-hdr">
+          <span className={`sltp-tag ${isSl ? 'sltp-sl' : 'sltp-tp'}`}>
+            {isSl ? 'Stop Loss' : 'Take Profit'}
+          </span>
+          <button className="sltp-x" onClick={close}>✕</button>
+        </div>
+        <div className="sltp-contract">{popup.symbol}</div>
+        <div className="sltp-meta">
+          Entry ₹{popup.entryPrice.toFixed(2)} · {popup.side.toUpperCase()}
+        </div>
+        <div className="sltp-row">
+          <span className="sltp-lbl">Price (₹)</span>
+          <input
+            className="sltp-inp"
+            type="number"
+            step="0.5"
+            value={editPrice}
+            onChange={(e) => setEdit(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') close(); }}
+            autoFocus
+          />
+          {isFinite(pct) && (
+            <span className={`sltp-pct ${pct >= 0 ? 'sltp-pct-up' : 'sltp-pct-dn'}`}>
+              {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        <div className="sltp-hint">
+          {isSl
+            ? (popup.side === 'buy'
+                ? 'Price must drop to this level to trigger exit'
+                : 'Price must rise to this level to trigger exit')
+            : (popup.side === 'buy'
+                ? 'Price must rise to this level to take profit'
+                : 'Price must drop to this level to take profit')}
+        </div>
+        <div className="sltp-btns">
+          <button className="sltp-cancel" onClick={close}>Cancel</button>
+          <button
+            className={`sltp-confirm ${isSl ? 'sltp-sl-btn' : 'sltp-tp-btn'}`}
+            disabled={!isValid}
+            onClick={confirm}
+          >
+            {isSl ? 'Set Stop Loss' : 'Set Take Profit'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // ROOT — init broker store, render all three widgets
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -532,6 +609,7 @@ export function ChartWidgets() {
       <AccountWidget source={source} sandbox={sandbox} />
       <PnlWidget source={source} sandbox={sandbox} />
       <PositionsTerminal source={source} sandbox={sandbox} />
+      <SlTpPopup />
     </>
   );
 }

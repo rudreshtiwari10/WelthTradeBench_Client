@@ -4,8 +4,19 @@
 
 // Lot sizes per NSE/BSE F&O contract specifications (updated May 2025).
 // NIFTY: 75→65, BANKNIFTY: 30, FINNIFTY: 65, MIDCPNIFTY: 120, SENSEX: 20, BANKEX: 30.
+// MCX commodity lot sizes per exchange specs.
 const LOT_SIZE: Record<string, number> = {
   NIFTY: 65, BANKNIFTY: 30, FINNIFTY: 65, MIDCPNIFTY: 120, SENSEX: 20, BANKEX: 30,
+  // MCX commodities (1 lot = standard contract unit)
+  GOLD: 1, GOLDM: 1, GOLDPETAL: 1,
+  SILVER: 1, SILVERM: 1, SILVERMIC: 1,
+  CRUDEOIL: 100, CRUDEOILM: 10,
+  NATURALGAS: 1250,
+  COPPER: 2500, COPPERM: 250,
+  ZINC: 5000, ZINCP: 500,
+  ALUMINIUM: 5000, ALUMINIM: 500,
+  NICKEL: 1500, NICKELM: 100,
+  LEAD: 5000, LEADM: 1000,
 };
 
 export function lotSize(symbol: string): number {
@@ -16,6 +27,16 @@ export function strikeStep(symbol: string, spot: number): number {
   const s = symbol.toUpperCase();
   if (s === 'BANKNIFTY' || s === 'SENSEX' || s === 'BANKEX') return 100;
   if (s === 'NIFTY' || s === 'FINNIFTY') return 50;
+  // MCX commodity strike steps
+  if (s === 'GOLD' || s === 'GOLDM') return 100;
+  if (s === 'SILVER' || s === 'SILVERM') return 500;
+  if (s === 'CRUDEOIL' || s === 'CRUDEOILM') return 50;
+  if (s === 'NATURALGAS') return 5;
+  if (s === 'COPPER' || s === 'COPPERM') return 5;
+  if (s === 'ZINC' || s === 'ZINCP') return 2;
+  if (s === 'ALUMINIUM' || s === 'ALUMINIM') return 2;
+  if (s === 'NICKEL' || s === 'NICKELM') return 10;
+  if (s === 'LEAD' || s === 'LEADM') return 2;
   if (spot < 250) return 5;
   if (spot < 1000) return 10;
   if (spot < 5000) return 50;

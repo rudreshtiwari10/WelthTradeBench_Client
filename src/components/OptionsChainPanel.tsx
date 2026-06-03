@@ -98,6 +98,12 @@ export function OptionsChainPanel() {
   // Ref for option-tick subscription cleanup
   const optionUnsubRef = useRef<(() => void) | null>(null);
 
+  // ── ATM depth + pending order ─────────────────────────────────────────
+  const [depth, setDepth] = useState<number | 'all'>(8);
+  const [pendingOrder, setPendingOrder] = useState<{ row: DerivChainRow; optType: 'CE' | 'PE' } | null>(null);
+  const chainBodyRef = useRef<HTMLDivElement>(null);
+  const atmRowRef    = useRef<HTMLDivElement | null>(null);
+
   // ── Fetch real expiry dates from backend on underlying change ─────────
   useEffect(() => {
     setExpiries([]);
@@ -221,6 +227,24 @@ export function OptionsChainPanel() {
         Math.abs(r.strike - effectiveSpot) < Math.abs(best - effectiveSpot) ? r.strike : best,
         chain[0].strike)
     : 0;
+
+  // Filtered chain: ±depth strikes around ATM
+  const atmIdx = chain.findIndex((r) => r.strike === atmStrike);
+  const visibleChain: DerivChainRow[] = depth === 'all' || atmIdx < 0 || chain.length === 0
+    ? chain
+    : chain.slice(Math.max(0, atmIdx - (depth as number)), atmIdx + (depth as number) + 1);
+
+  // Auto-scroll chain body to center ATM row when chain loads or depth changes
+  useEffect(() => {
+    if (atmStrike <= 0) return;
+    const body = chainBodyRef.current;
+    const row  = atmRowRef.current;
+    if (!body || !row) return;
+    body.scrollTop = row.offsetTop - body.clientHeight / 2 + row.clientHeight / 2;
+  }, [atmStrike, depth]);
+
+  // Clear pending order on context change
+  useEffect(() => { setPendingOrder(null); }, [underlying, expiryIdx, depth]);
 
   // ── Place trade ───────────────────────────────────────────────────────
   const placeTrade = async (row: DerivChainRow, optType: 'CE' | 'PE') => {
@@ -367,6 +391,16 @@ export function OptionsChainPanel() {
             </span>
           )}
         </div>
+        <div className="ocp-depth-row">
+          <span className="ocp-depth-label">Rows ±ATM:</span>
+          {([4, 8, 12, 'all'] as const).map((d) => (
+            <button
+              key={String(d)}
+              className={`ocp-depth-chip ${depth === d ? 'active' : ''}`}
+              onClick={() => setDepth(d)}
+            >{d === 'all' ? 'All' : `±${d}`}</button>
+          ))}
+        </div>
       </div>
 
       {/* ── Chain table ── */}
@@ -376,7 +410,7 @@ export function OptionsChainPanel() {
           <span>Strike</span>
           <span>PUT (PE)</span>
         </div>
-        <div className="ocp-chain-body">
+        <div ref={chainBodyRef} className="ocp-chain-body">
           {loading && <div className="ocp-empty">Loading chain…</div>}
           {!loading && chainError && (
             <div className="ocp-empty ocp-chain-err">{chainError}</div>
@@ -386,22 +420,28 @@ export function OptionsChainPanel() {
               {expiries.length === 0 ? 'Select an expiry' : 'No data'}
             </div>
           )}
-          {!loading && !chainError && chain.map((row) => {
-            const isAtm   = row.strike === atmStrike;
-            const ceItm   = effectiveSpot > 0 && row.strike < effectiveSpot;
-            const peItm   = effectiveSpot > 0 && row.strike > effectiveSpot;
-            const cePKey  = `${row.strike}CE`;
-            const pePKey  = `${row.strike}PE`;
-            const cePlace = placing === cePKey;
-            const pePlace = placing === pePKey;
+          {!loading && !chainError && visibleChain.map((row) => {
+            const isAtm       = row.strike === atmStrike;
+            const ceItm       = effectiveSpot > 0 && row.strike < effectiveSpot;
+            const peItm       = effectiveSpot > 0 && row.strike > effectiveSpot;
+            const cePKey      = `${row.strike}CE`;
+            const pePKey      = `${row.strike}PE`;
+            const cePlace     = placing === cePKey;
+            const pePlace     = placing === pePKey;
+            const isPendingCe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'CE';
+            const isPendingPe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'PE';
 
             return (
-              <div key={row.strike} className={`ocp-chain-row ${isAtm ? 'atm' : ''}`}>
+              <div
+                key={row.strike}
+                ref={isAtm ? (el) => { atmRowRef.current = el; } : undefined}
+                className={`ocp-chain-row ${isAtm ? 'atm' : ''}`}
+              >
                 {/* CE cell */}
                 <button
-                  className={`ocp-ce-cell ${ceItm ? 'itm' : 'otm'} ${side}`}
-                  disabled={!row.callKey || !!placing}
-                  onClick={() => placeTrade(row, 'CE')}
+                  className={`ocp-ce-cell ${ceItm ? 'itm' : 'otm'} ${side}${isPendingCe ? ' selected' : ''}`}
+                  disabled={!row.callKey || (!!placing && !isPendingCe)}
+                  onClick={() => setPendingOrder({ row, optType: 'CE' })}
                   title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'CE')}`}
                 >
                   {cePlace ? (
@@ -422,9 +462,9 @@ export function OptionsChainPanel() {
 
                 {/* PE cell */}
                 <button
-                  className={`ocp-pe-cell ${peItm ? 'itm' : 'otm'} ${side}`}
-                  disabled={!row.putKey || !!placing}
-                  onClick={() => placeTrade(row, 'PE')}
+                  className={`ocp-pe-cell ${peItm ? 'itm' : 'otm'} ${side}${isPendingPe ? ' selected' : ''}`}
+                  disabled={!row.putKey || (!!placing && !isPendingPe)}
+                  onClick={() => setPendingOrder({ row, optType: 'PE' })}
                   title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'PE')}`}
                 >
                   {pePlace ? (
@@ -441,6 +481,41 @@ export function OptionsChainPanel() {
           })}
         </div>
       </div>
+
+      {/* ── Pending Order Confirmation ── */}
+      {pendingOrder && exp && (
+        <div className="ocp-pending">
+          <div className="ocp-pending-info">
+            <span className={`ocp-pending-type ${pendingOrder.optType === 'CE' ? 'ce' : 'pe'}`}>
+              {pendingOrder.optType}
+            </span>
+            <span className="ocp-pending-contract">
+              {buildContractSymbol(underlying, exp.value, pendingOrder.row.strike, pendingOrder.optType)}
+            </span>
+            <span className="ocp-pending-ltp">
+              ₹{fmt2(pendingOrder.optType === 'CE' ? pendingOrder.row.callLtp : pendingOrder.row.putLtp)}
+            </span>
+            <span className={`ocp-pending-side ${side}`}>{side.toUpperCase()}</span>
+            <span className="ocp-pending-lots">{lots}L</span>
+          </div>
+          <div className="ocp-pending-btns">
+            <button className="ocp-pending-cancel" onClick={() => setPendingOrder(null)}>✕</button>
+            <button
+              className={`ocp-pending-place ${side}`}
+              disabled={placing === `${pendingOrder.row.strike}${pendingOrder.optType}`}
+              onClick={async () => {
+                const snap = pendingOrder;
+                try { await placeTrade(snap.row, snap.optType); }
+                finally { setPendingOrder(null); }
+              }}
+            >
+              {placing === `${pendingOrder.row.strike}${pendingOrder.optType}`
+                ? 'Placing…'
+                : `Place ${side.toUpperCase()}`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Footer ── */}
       <div className="ocp-footer">

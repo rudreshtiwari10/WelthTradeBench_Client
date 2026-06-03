@@ -15,10 +15,25 @@ import './SymbolSearch.css';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 const KIND_TAG: Record<string, string> = {
-  index: 'Index', stock: 'Equity', future: 'Futures', option: 'Options', crypto: 'Crypto',
+  index: 'Index', stock: 'Equity', future: 'Futures', option: 'Options',
+  crypto: 'Crypto', commodity: 'Commodity',
 };
 
 const OPTIONABLE = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
+
+const MCX_COMMODITIES = [
+  { sym: 'GOLD',       label: 'Gold' },
+  { sym: 'GOLDM',      label: 'Gold Mini' },
+  { sym: 'SILVER',     label: 'Silver' },
+  { sym: 'SILVERM',    label: 'Silver Mini' },
+  { sym: 'CRUDEOIL',   label: 'Crude Oil' },
+  { sym: 'NATURALGAS', label: 'Nat Gas' },
+  { sym: 'COPPER',     label: 'Copper' },
+  { sym: 'ZINC',       label: 'Zinc' },
+  { sym: 'ALUMINIUM',  label: 'Aluminium' },
+  { sym: 'NICKEL',     label: 'Nickel' },
+  { sym: 'LEAD',       label: 'Lead' },
+];
 
 // Expiry weekday per underlying (0=Sun…6=Sat)
 const EXPIRY_DOW: Record<string, number> = {
@@ -119,21 +134,25 @@ export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
   }, [tab, optUnderlying, optExpiry]);
 
   // ── Futures tab ──────────────────────────────────────────────────────
+  const [futSection, setFutSection] = useState<'indices' | 'commodities'>('indices');
   const [futUnderlying, setFutUnderlying] = useState('NIFTY');
+  const [futCommodity, setFutCommodity] = useState('GOLD');
   const [futures, setFutures] = useState<FutureRow[]>([]);
   const [futLoading, setFutLoading] = useState(false);
+
+  const activeFutSym = futSection === 'commodities' ? futCommodity : futUnderlying;
 
   useEffect(() => {
     if (tab !== 'futures') return;
     let active = true;
     setFutLoading(true);
     setFutures([]);
-    fetchFutures(futUnderlying)
+    fetchFutures(activeFutSym)
       .then((res) => { if (active) setFutures(res.futures); })
       .catch(() => { if (active) setFutures([]); })
       .finally(() => { if (active) setFutLoading(false); });
     return () => { active = false; };
-  }, [tab, futUnderlying]);
+  }, [tab, activeFutSym]);
 
   // ── Choose handlers ───────────────────────────────────────────────────
   const choose = (info: SymbolInfo) => {
@@ -327,16 +346,43 @@ export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
         {/* ── FUTURES TAB ── */}
         {tab === 'futures' && (
           <div className="ss-deriv-body">
-            {/* Underlying picker */}
-            <div className="ss-ul-row">
-              {OPTIONABLE.map((ul) => (
-                <button
-                  key={ul}
-                  className={`ss-ul-btn ${futUnderlying === ul ? 'active' : ''}`}
-                  onClick={() => setFutUnderlying(ul)}
-                >{ul}</button>
-              ))}
+            {/* Section toggle: Indices vs Commodities */}
+            <div className="ss-fut-section-toggle">
+              <button
+                className={`ss-fut-section-btn ${futSection === 'indices' ? 'active' : ''}`}
+                onClick={() => setFutSection('indices')}
+              >NSE Indices</button>
+              <button
+                className={`ss-fut-section-btn ${futSection === 'commodities' ? 'active' : ''}`}
+                onClick={() => setFutSection('commodities')}
+              >MCX Commodities</button>
             </div>
+
+            {/* Underlying picker — indices */}
+            {futSection === 'indices' && (
+              <div className="ss-ul-row">
+                {OPTIONABLE.map((ul) => (
+                  <button
+                    key={ul}
+                    className={`ss-ul-btn ${futUnderlying === ul ? 'active' : ''}`}
+                    onClick={() => setFutUnderlying(ul)}
+                  >{ul}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Underlying picker — MCX commodities */}
+            {futSection === 'commodities' && (
+              <div className="ss-ul-row ss-ul-row-wrap">
+                {MCX_COMMODITIES.map(({ sym, label }) => (
+                  <button
+                    key={sym}
+                    className={`ss-ul-btn ${futCommodity === sym ? 'active' : ''}`}
+                    onClick={() => setFutCommodity(sym)}
+                  >{label}</button>
+                ))}
+              </div>
+            )}
 
             {/* Futures list */}
             <div className="ss-fut-list">
@@ -350,7 +396,9 @@ export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
                   </div>
                   <div className="ss-fut-right">
                     <span className="ss-fut-ltp">₹{f.ltp.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                    <span className="ss-kind">Futures</span>
+                    <span className={`ss-kind ${futSection === 'commodities' ? 'ss-kind-commodity' : ''}`}>
+                      {futSection === 'commodities' ? 'MCX Futures' : 'Futures'}
+                    </span>
                   </div>
                 </button>
               ))}

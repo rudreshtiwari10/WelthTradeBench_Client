@@ -111,56 +111,60 @@ export function ChartView() {
     chartRef.current?.applyOptions({
       timeScale: { timeVisible: INTRADAY.has(interval), secondsVisible: false },
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interval, ready]);
 
-  // Keep current chart type available to the (long-lived) tick handler.
+  // Keep current chart type and interval available to the (long-lived) tick handler.
+  // Using refs instead of deps avoids resubscribing on every timeframe switch;
+  // when interval changes the data-load effect clears candlesRef anyway so
+  // in-flight ticks are dropped by the candles.length === 0 guard.
   const chartTypeRef = useRef(chartType);
   chartTypeRef.current = chartType;
+  const intervalRef = useRef(interval);
+  intervalRef.current = interval;
 
-  // (Re)build series for the chart type and (re)load history from the backend.
+  // (Re)build price/volume series on symbol/interval/chartType change.
   //
-  // AbortController: when the user switches timeframe/symbol before the previous
-  // fetch completes, the in-flight request is cancelled immediately. This prevents
-  // redundant Upstox API calls (rate-limit pressure) and stale data rendering.
+  // For live instruments (Upstox indices, equities, MCX commodities): no REST
+  // fetch — the chart starts empty and is built entirely from WebSocket ticks.
+  // scrollToRealTime() in the tick handler keeps the latest bar always visible.
+  //
+  // For MOCK derivative instruments (MOCK:option:… / MOCK:future:…): these have
+  // no live tick stream, so we still fetch static history from the backend.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    const ac = new AbortController();
-
-    // Clear stale candles so ticks can't write old-symbol data into the new series
-    // while the fetch is in-flight.
+    // Clear stale candles immediately — the tick handler checks this array.
     candlesRef.current = [];
+    setLegend(null);
 
     // Recreate price series for the chart type.
     if (priceSeriesRef.current) chart.removeSeries(priceSeriesRef.current);
     const priceSeries = createPriceSeries(chart, chartType);
     priceSeriesRef.current = priceSeries;
 
-    // Volume overlay in the bottom 20% of the main pane (matches TV default).
+    // Volume overlay in the bottom 20% of the main pane.
     if (!volSeriesRef.current) {
       const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'vol' });
       vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       volSeriesRef.current = vol;
     }
+
     setReady(true);
     loadDrawings(`${symbol.symbol}:${interval}`);
+    useChartStore.getState().setBarCount(0);
+    useChartStore.getState().bumpData();
 
+    // Live mode: chart builds purely from WebSocket ticks — no REST fetch needed.
+    if (!symbol.instrumentKey?.startsWith('MOCK:')) return;
+
+    // MOCK derivative path: no live ticks → fetch static history so chart shows data.
+    const ac = new AbortController();
     (async () => {
       try {
-        const res = await fetchHistory(symbol.symbol, interval, 600, symbol.instrumentKey, ac.signal);
-
-        // Discard result if this effect was superseded (new symbol/interval) or aborted.
+        const res = await fetchHistory(symbol.symbol, interval, 300, symbol.instrumentKey, ac.signal);
         if (ac.signal.aborted || priceSeriesRef.current !== priceSeries) return;
-
-        // If Upstox is connected but the backend fell back to mock, warn the user.
-        if (res.source === 'mock' && useBrokerStore.getState().source === 'upstox') {
-          const msg = res.source_warning ?? `${symbol.symbol} ${interval} data unavailable from Upstox`;
-          pushToast(`⚠ Showing simulated data — ${msg}`);
-          console.warn('[ChartView] mock fallback:', msg);
-        }
-
         const candles = res.candles;
         if (!candles.length) return;
         candlesRef.current = candles;
@@ -173,12 +177,10 @@ export function ChartView() {
         useChartStore.getState().setBarCount(candles.length);
         useChartStore.getState().bumpData();
       } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') return; // normal cancellation
-        console.error('[ChartView] history fetch failed:', e);
+        if (e instanceof Error && e.name === 'AbortError') return;
+        console.error('[ChartView] MOCK history fetch failed:', e);
       }
     })();
-
-    // Cleanup: abort the in-flight request so we don't hit Upstox rate limits.
     return () => { ac.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartType, symbol.symbol, interval]);
@@ -297,33 +299,81 @@ export function ChartView() {
   const removeCompare = useCompareStore((st) => st.remove);
   useEffect(() => { useCompareStore.getState().clear(); }, [symbol.symbol]);
 
-  // Live ticks: update the forming (last) candle's OHLC in real time.
-  // New bars are NOT created from ticks — Upstox candles use IST-aligned timestamps
-  // that don't match UTC epoch math, so bar-boundary detection from tick.ts would
-  // produce spurious bars. History is refreshed on symbol/interval changes instead.
+  // ── Pure real-time tick → candle engine ────────────────────────────────
   //
-  // MOCK derivatives (MOCK:option:… / MOCK:future:…) have no valid tick stream —
-  // the mock backend would broadcast ticks at the default ~₹1000 price, which would
-  // instantly corrupt the option/future candles and collapse the price scale.
-  // Skip the subscription for these; the static history from fetchHistory is enough.
+  // No REST history is fetched for live instruments.  Every candle on the chart
+  // is built from arriving WebSocket ticks:
+  //
+  //  • First tick ever  → creates the first bar (open = close = ltp).
+  //  • Same bar period  → updates high / low / close of the current bar.
+  //  • New bar period   → opens bar with previous close as open, scrolls
+  //                       chart rightward so the advancing bar is always visible.
+  //
+  // Bar boundaries use IST-aligned epoch math so they match Upstox's own bar
+  // timestamps for every interval and exchange (NSE, MCX, BSE):
+  //   barTs = floor((tick.ts + 19800) / intervalSec) * intervalSec − 19800
+  //
+  // MOCK derivatives (MOCK:option:… / MOCK:future:…) skip this subscription —
+  // they have no live tick stream and use static REST history instead.
   useEffect(() => {
     if (symbol.instrumentKey?.startsWith('MOCK:')) return;
+
+    const INTERVAL_SEC: Record<string, number> = {
+      '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+      '1H': 3600, '2H': 7200, '4H': 14400,
+      '1D': 86400, '1W': 604800, '1M': 2592000,
+    };
+    const IST = 19800; // UTC+5:30 in seconds
+
+    const barTs = (tickTs: number): number => {
+      const sec = INTERVAL_SEC[intervalRef.current] ?? 86400;
+      return Math.floor((tickTs + IST) / sec) * sec - IST;
+    };
+
     const unsub = liveFeed.subscribe(symbol.symbol, (tick) => {
       if (useReplayStore.getState().active) return;
-      const candles = candlesRef.current;
       const series = priceSeriesRef.current;
-      if (!series || candles.length === 0) return;
-      const last = candles[candles.length - 1];
-      last.close = tick.ltp;
-      last.high = Math.max(last.high, tick.ltp);
-      last.low = Math.min(last.low, tick.ltp);
-      series.update(priceData([last], chartTypeRef.current)[0] as any);
+      if (!series) return;
+      const candles = candlesRef.current;
+      const ts = barTs(tick.ts);
+
+      if (candles.length === 0 || ts > candles[candles.length - 1].time) {
+        // ── New bar (including the very first bar on an empty chart) ─────
+        // Open at the previous bar's close so there's no price gap between bars.
+        const openPrice = candles.length > 0 ? candles[candles.length - 1].close : tick.ltp;
+        const newBar: Candle = {
+          time: ts,
+          open: openPrice,
+          high: Math.max(openPrice, tick.ltp),
+          low:  Math.min(openPrice, tick.ltp),
+          close: tick.ltp,
+          volume: 0,
+        };
+        candles.push(newBar);
+        series.update(priceData([newBar], chartTypeRef.current)[0] as any);
+        volSeriesRef.current?.update({ time: ts as any, value: 0, color: 'rgba(120,120,120,0.35)' });
+        // Pin the view to the right so the chart always shows the newest bar.
+        chartRef.current?.timeScale().scrollToRealTime();
+        useChartStore.getState().setBarCount(candles.length);
+      } else {
+        // ── Same bar — update OHLC in place ───────────────────────────────
+        const last = candles[candles.length - 1];
+        last.close = tick.ltp;
+        last.high  = Math.max(last.high, tick.ltp);
+        last.low   = Math.min(last.low,  tick.ltp);
+        series.update(priceData([last], chartTypeRef.current)[0] as any);
+      }
+
+      const cur  = candles[candles.length - 1];
       const prev = candles[candles.length - 2];
-      setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });
+      setLegend({
+        open: cur.open, high: cur.high, low: cur.low, close: cur.close,
+        prevClose: prev?.close ?? cur.open, volume: cur.volume,
+      });
       useChartStore.getState().bumpData();
     });
     return unsub;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol.symbol, symbol.instrumentKey]);
 
   const up = legend ? legend.close >= legend.prevClose : true;
@@ -333,77 +383,85 @@ export function ChartView() {
 
   return (
     <ChartContext.Provider value={{ chartRef, seriesRef: priceSeriesRef, candlesRef, containerRef, ready }}>
-    <div className="chart-view">
-      <div className="chart-legend">
-        <div className="legend-row">
-          <span className="legend-symbol">{symbol.name}</span>
-          <span className="legend-dot">·</span>
-          <span className="legend-meta">{interval}</span>
-          <span className="legend-dot">·</span>
-          <span className="legend-meta">{symbol.exchange}</span>
-          {legend && (
-            <span className="legend-ohlc">
-              <span>O<b className={cls}>{fmt(legend.open)}</b></span>
-              <span>H<b className={cls}>{fmt(legend.high)}</b></span>
-              <span>L<b className={cls}>{fmt(legend.low)}</b></span>
-              <span>C<b className={cls}>{fmt(legend.close)}</b></span>
-              <span className={cls}>{chg >= 0 ? '+' : '−'}{fmt(Math.abs(chg))} ({chgPct >= 0 ? '+' : '−'}{Math.abs(chgPct).toFixed(2)}%)</span>
-            </span>
-          )}
-        </div>
-        <div className="legend-row legend-vol">
-          <span className="legend-meta">Vol · {symbol.exchange}</span>
-          {legend && <span className={cls}>{fmtVol(legend.volume)}</span>}
-        </div>
-        {compares.map((c) => (
-          <div className="legend-row compare-row" key={c.symbol}>
-            <span className="cmp-dot" style={{ background: c.color }} />
-            <span className="cmp-name" style={{ color: c.color }}>{c.symbol}</span>
-            <span className="legend-meta">{c.name}</span>
-            <button className="cmp-remove" title="Remove comparison" onClick={() => removeCompare(c.symbol)}>×</button>
+      <div className="chart-view">
+        <div className="chart-legend">
+          <div className="legend-row">
+            <span className="legend-symbol">{symbol.name}</span>
+            <span className="legend-dot">·</span>
+            <span className="legend-meta">{interval}</span>
+            <span className="legend-dot">·</span>
+            <span className="legend-meta">{symbol.exchange}</span>
+            {legend && (
+              <span className="legend-ohlc">
+                <span>O<b className={cls}>{fmt(legend.open)}</b></span>
+                <span>H<b className={cls}>{fmt(legend.high)}</b></span>
+                <span>L<b className={cls}>{fmt(legend.low)}</b></span>
+                <span>C<b className={cls}>{fmt(legend.close)}</b></span>
+                <span className={cls}>{chg >= 0 ? '+' : '−'}{fmt(Math.abs(chg))} ({chgPct >= 0 ? '+' : '−'}{Math.abs(chgPct).toFixed(2)}%)</span>
+              </span>
+            )}
           </div>
-        ))}
+          <div className="legend-row legend-vol">
+            <span className="legend-meta">Vol · {symbol.exchange}</span>
+            {legend && <span className={cls}>{fmtVol(legend.volume)}</span>}
+          </div>
+          {compares.map((c) => (
+            <div className="legend-row compare-row" key={c.symbol}>
+              <span className="cmp-dot" style={{ background: c.color }} />
+              <span className="cmp-name" style={{ color: c.color }}>{c.symbol}</span>
+              <span className="legend-meta">{c.name}</span>
+              <button className="cmp-remove" title="Remove comparison" onClick={() => removeCompare(c.symbol)}>×</button>
+            </div>
+          ))}
+        </div>
+
+        {/* Awaiting first live tick — shown only for non-MOCK live instruments */}
+        {ready && !legend && !symbol.instrumentKey?.startsWith('MOCK:') && (
+          <div className="chart-awaiting">
+            <span className="chart-awaiting-dot" />
+            Awaiting live data for {symbol.symbol}…
+          </div>
+        )}
+
+        <div
+          ref={containerRef}
+          className="chart-canvas"
+          onDoubleClick={resetView}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: e.clientX - r.left, y: e.clientY - r.top });
+          }}
+        />
+
+        <IndicatorLegend />
+        <TradeButtons symbol={symbol.symbol} />
+        {ready && <IndicatorsRenderer />}
+        {ready && <CompareRenderer />}
+        {ready && <AlertsRenderer />}
+        {ready && <DrawingLayer />}
+        <DrawingToolbarState />
+        <ReplayBar />
+        <ObjectTree />
+        {ready && <PositionLines />}
+        <ChartWidgets />
+
+        <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
+
+        {menu && (
+          <>
+            <div className="ctx-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+            <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+              <button className="ctx-item" onClick={resetView}>Reset chart view</button>
+              <div className="ctx-sep" />
+              <button className="ctx-item" onClick={() => { priceSeriesRef.current?.priceScale().applyOptions({ autoScale: true }); setMenu(null); }}>Auto (fit data to screen)</button>
+              <button className="ctx-item" onClick={() => setMenu(null)}>Reset price scale</button>
+              <div className="ctx-sep" />
+              <button className="ctx-item disabled" disabled>Settings…</button>
+            </div>
+          </>
+        )}
       </div>
-
-      <div
-        ref={containerRef}
-        className="chart-canvas"
-        onDoubleClick={resetView}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          const r = e.currentTarget.getBoundingClientRect();
-          setMenu({ x: e.clientX - r.left, y: e.clientY - r.top });
-        }}
-      />
-
-      <IndicatorLegend />
-      <TradeButtons symbol={symbol.symbol} />
-      {ready && <IndicatorsRenderer />}
-      {ready && <CompareRenderer />}
-      {ready && <AlertsRenderer />}
-      {ready && <DrawingLayer />}
-      <DrawingToolbarState />
-      <ReplayBar />
-      <ObjectTree />
-      {ready && <PositionLines />}
-      <ChartWidgets />
-
-      <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
-
-      {menu && (
-        <>
-          <div className="ctx-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
-          <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
-            <button className="ctx-item" onClick={resetView}>Reset chart view</button>
-            <div className="ctx-sep" />
-            <button className="ctx-item" onClick={() => { priceSeriesRef.current?.priceScale().applyOptions({ autoScale: true }); setMenu(null); }}>Auto (fit data to screen)</button>
-            <button className="ctx-item" onClick={() => setMenu(null)}>Reset price scale</button>
-            <div className="ctx-sep" />
-            <button className="ctx-item disabled" disabled>Settings…</button>
-          </div>
-        </>
-      )}
-    </div>
     </ChartContext.Provider>
   );
 }
