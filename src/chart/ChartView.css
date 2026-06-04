@@ -111,6 +111,27 @@
   50%       { opacity: 0.35; transform: scale(0.7); }
 }
 
+/* ── Candle countdown timer (TradingView-style, right price scale) ── */
+.candle-timer {
+  position: absolute;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: none;
+  border-radius: 2px 0 0 2px;
+  color: #fff;
+}
+.candle-timer.timer-up   { background: var(--up);   }
+.candle-timer.timer-down { background: var(--down);  }
+
 /* Right-click context menu */
 .ctx-backdrop {
   position: fixed;

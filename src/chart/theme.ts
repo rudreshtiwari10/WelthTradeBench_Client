@@ -1,5 +1,30 @@
 import { ColorType, CrosshairMode, LineStyle, type DeepPartial, type ChartOptions } from 'lightweight-charts';
 
+// IST offset in seconds (UTC+5:30).
+const IST_OFFSET = 19800;
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * Convert a UTC Unix timestamp (seconds) to a Date whose UTC methods
+ * return IST wall-clock values.  e.g. getUTCHours() → IST hour.
+ */
+function toIST(utcSec: number): Date {
+  return new Date((utcSec + IST_OFFSET) * 1000);
+}
+
+/** HH:MM in IST — used for intraday x-axis labels and crosshair. */
+function istTimeFormatter(utcSec: number): string {
+  const d = toIST(utcSec);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/** "D Mon YYYY" in IST — used for daily/weekly/monthly x-axis labels. */
+function istDateFormatter(utcSec: number): string {
+  const d = toIST(utcSec);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 // TradingView "dark" theme for the lightweight-charts instance.
 export const chartOptions: DeepPartial<ChartOptions> = {
   layout: {
@@ -9,6 +34,11 @@ export const chartOptions: DeepPartial<ChartOptions> = {
     fontSize: 11,
     panes: { separatorColor: '#2a2e39', separatorHoverColor: '#363a45', enableResize: true },
     attributionLogo: false,
+  },
+  // Force all timestamps to display in IST regardless of browser timezone.
+  localization: {
+    timeFormatter: istTimeFormatter,
+    dateFormatter: istDateFormatter,
   },
   grid: {
     vertLines: { color: '#1e222d' },

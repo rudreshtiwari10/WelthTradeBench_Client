@@ -28,6 +28,7 @@ import { ReplayBar } from '../components/ReplayBar';
 import { ObjectTree } from '../components/ObjectTree';
 import { ChartWidgets } from '../components/ChartWidgets';
 import { PositionLines } from '../components/PositionLines';
+import { CandleTimer } from './CandleTimer';
 import './ChartView.css';
 
 interface LegendData {
@@ -125,12 +126,11 @@ export function ChartView() {
 
   // (Re)build price/volume series on symbol/interval/chartType change.
   //
-  // For live instruments (Upstox indices, equities, MCX commodities): no REST
-  // fetch — the chart starts empty and is built entirely from WebSocket ticks.
-  // scrollToRealTime() in the tick handler keeps the latest bar always visible.
-  //
-  // For MOCK derivative instruments (MOCK:option:… / MOCK:future:…): these have
-  // no live tick stream, so we still fetch static history from the backend.
+  // Historical candles are fetched for ALL instruments so the chart shows data
+  // immediately instead of starting empty.  Live instruments (indices, stocks,
+  // MCX commodities) additionally receive WebSocket ticks that update the latest
+  // bar in real-time on top of this history.  MOCK derivatives have no live tick
+  // stream, so they rely entirely on the static history returned here.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -156,10 +156,8 @@ export function ChartView() {
     useChartStore.getState().setBarCount(0);
     useChartStore.getState().bumpData();
 
-    // Live mode: chart builds purely from WebSocket ticks — no REST fetch needed.
-    if (!symbol.instrumentKey?.startsWith('MOCK:')) return;
-
-    // MOCK derivative path: no live ticks → fetch static history so chart shows data.
+    // Fetch history for all instruments so the chart is never blank on load.
+    // Live instruments will continue receiving ticks on top of this data.
     const ac = new AbortController();
     (async () => {
       try {
@@ -178,7 +176,7 @@ export function ChartView() {
         useChartStore.getState().bumpData();
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return;
-        console.error('[ChartView] MOCK history fetch failed:', e);
+        console.error('[ChartView] history fetch failed:', e);
       }
     })();
     return () => { ac.abort(); };
@@ -330,6 +328,61 @@ export function ChartView() {
       return Math.floor((tickTs + IST) / sec) * sec - IST;
     };
 
+    // ── Shared helper: push a new bar onto candles + update chart ──────────
+    const openNewBar = (ts: number, openPrice: number) => {
+      const series = priceSeriesRef.current;
+      if (!series) return;
+      const candles = candlesRef.current;
+      const newBar: Candle = {
+        time: ts,
+        open: openPrice,
+        high: openPrice,
+        low:  openPrice,
+        close: openPrice,
+        volume: 0,
+      };
+      candles.push(newBar);
+      series.update(priceData([newBar], chartTypeRef.current)[0] as any);
+      volSeriesRef.current?.update({ time: ts as any, value: 0, color: 'rgba(120,120,120,0.35)' });
+      chartRef.current?.timeScale().scrollToRealTime();
+      useChartStore.getState().setBarCount(candles.length);
+      const prev = candles[candles.length - 2];
+      setLegend({
+        open: openPrice, high: openPrice, low: openPrice, close: openPrice,
+        prevClose: prev?.close ?? openPrice, volume: 0,
+      });
+      useChartStore.getState().bumpData();
+    };
+
+    // ── Wall-clock bar-boundary enforcer ────────────────────────────────────
+    // Brokers (e.g. Upstox ltpc mode) may send ticks only every ~15 s.
+    // Without this, the new candle would open 0–15 s late depending on when
+    // the next tick arrives.  Instead we schedule a setTimeout that fires at
+    // the exact IST-aligned boundary and pre-opens the new bar; any ticks that
+    // arrive afterwards simply update its OHLC in the normal path below.
+    let boundaryTimer: ReturnType<typeof setTimeout>;
+
+    const scheduleBoundary = () => {
+      const nowMs  = Date.now();
+      const nowSec = nowMs / 1000;
+      const sec    = INTERVAL_SEC[intervalRef.current] ?? 86400;
+      const nextBarStart = (Math.floor((nowSec + IST) / sec) + 1) * sec - IST;
+      const delay  = Math.max(50, (nextBarStart - nowSec) * 1000);
+
+      boundaryTimer = setTimeout(() => {
+        if (!useReplayStore.getState().active) {
+          const candles = candlesRef.current;
+          const ts = barTs(Math.floor(Date.now() / 1000));
+          if (candles.length && ts > candles[candles.length - 1].time) {
+            openNewBar(ts, candles[candles.length - 1].close);
+          }
+        }
+        scheduleBoundary(); // re-arm for the next boundary
+      }, delay);
+    };
+
+    scheduleBoundary();
+
     const unsub = liveFeed.subscribe(symbol.symbol, (tick) => {
       if (useReplayStore.getState().active) return;
       const series = priceSeriesRef.current;
@@ -338,23 +391,15 @@ export function ChartView() {
       const ts = barTs(tick.ts);
 
       if (candles.length === 0 || ts > candles[candles.length - 1].time) {
-        // ── New bar (including the very first bar on an empty chart) ─────
-        // Open at the previous bar's close so there's no price gap between bars.
+        // ── New bar (first ever, or boundary enforcer hasn't fired yet) ────
         const openPrice = candles.length > 0 ? candles[candles.length - 1].close : tick.ltp;
-        const newBar: Candle = {
-          time: ts,
-          open: openPrice,
-          high: Math.max(openPrice, tick.ltp),
-          low:  Math.min(openPrice, tick.ltp),
-          close: tick.ltp,
-          volume: 0,
-        };
-        candles.push(newBar);
-        series.update(priceData([newBar], chartTypeRef.current)[0] as any);
-        volSeriesRef.current?.update({ time: ts as any, value: 0, color: 'rgba(120,120,120,0.35)' });
-        // Pin the view to the right so the chart always shows the newest bar.
-        chartRef.current?.timeScale().scrollToRealTime();
-        useChartStore.getState().setBarCount(candles.length);
+        openNewBar(ts, openPrice);
+        // Update close/high/low with actual tick price
+        const last = candles[candles.length - 1];
+        last.close = tick.ltp;
+        last.high  = Math.max(last.high, tick.ltp);
+        last.low   = Math.min(last.low,  tick.ltp);
+        series.update(priceData([last], chartTypeRef.current)[0] as any);
       } else {
         // ── Same bar — update OHLC in place ───────────────────────────────
         const last = candles[candles.length - 1];
@@ -372,7 +417,8 @@ export function ChartView() {
       });
       useChartStore.getState().bumpData();
     });
-    return unsub;
+
+    return () => { unsub(); clearTimeout(boundaryTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol.symbol, symbol.instrumentKey]);
 
@@ -444,6 +490,7 @@ export function ChartView() {
         <ReplayBar />
         <ObjectTree />
         {ready && <PositionLines />}
+        {ready && <CandleTimer />}
         <ChartWidgets />
 
         <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
