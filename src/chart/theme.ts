@@ -13,10 +13,14 @@ function toIST(utcSec: number): Date {
   return new Date((utcSec + IST_OFFSET) * 1000);
 }
 
-/** HH:MM in IST */
+/** D Mon YYYY HH:MM in IST (time omitted for daily charts at 00:00) */
 function istTimeFormatter(utcSec: number): string {
   const d = toIST(utcSec);
-  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  const dateStr = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  const h = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  if (h === 0 && m === 0) return dateStr;
+  return `${dateStr}  ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 /** "D Mon YYYY" in IST */
@@ -61,7 +65,6 @@ export const chartOptions: DeepPartial<ChartOptions> = {
   // Force all timestamps to display in IST regardless of browser timezone.
   localization: {
     timeFormatter: istTimeFormatter,
-    dateFormatter: istDateFormatter,
   },
   grid: {
     vertLines: { color: '#1e222d' },
