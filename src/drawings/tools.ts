@@ -90,7 +90,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     id: 'patterns', icon: 'pattern', title: 'Patterns',
     sections: [
       { title: 'Chart Patterns', tools: [
-        { tool: 'polyline', icon: 'pattern', label: 'XABCD Pattern' },
+        { tool: 'xabcd', icon: 'pattern', label: 'XABCD Pattern' },
         { tool: 'polyline', icon: 'pattern', label: 'Cypher Pattern' },
         { tool: 'polyline', icon: 'pattern', label: 'Head and Shoulders' },
         { tool: 'polyline', icon: 'pattern', label: 'ABCD Pattern' },

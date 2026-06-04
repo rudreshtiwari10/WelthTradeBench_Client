@@ -13,6 +13,28 @@
   cursor: default;
 }
 
+/* ── Inline text / callout editor ─────────────────────────────────────── */
+.draw-text-input {
+  position: absolute;
+  z-index: 10;
+  background: rgba(19, 23, 34, 0.82);
+  border: none;
+  border-bottom: 2px solid var(--accent, #2962ff);
+  outline: none;
+  color: var(--text-strong, #d1d4dc);
+  font-size: 14px;
+  font-family: var(--font, sans-serif);
+  min-width: 140px;
+  padding: 3px 6px;
+  caret-color: var(--accent, #2962ff);
+  border-radius: 2px 2px 0 0;
+  pointer-events: auto;
+}
+.draw-text-input::placeholder {
+  color: var(--text-muted, #787b86);
+  font-size: 12px;
+}
+
 /* ── Drawing right-click context menu ─────────────────────────────────── */
 .draw-ctx-menu {
   position: fixed;

@@ -22,7 +22,7 @@ const DEFAULTS: ChartSettings = {
   downColor: '#ef5350',
   wickVisible: true,
   borderVisible: false,
-  showVolume: true,
+  showVolume: false,
   gridVisible: true,
   crosshairColor: '#787b86',
   background: '',  // '' = follow theme

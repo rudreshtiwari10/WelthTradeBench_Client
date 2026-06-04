@@ -26,6 +26,13 @@ export function DrawingLayer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [capture, setCapture] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  // Inline text editor state: set when the user clicks with text/callout tool.
+  const [textInput, setTextInput] = useState<{
+    dp: DPoint; x: number; y: number; type: 'text' | 'callout';
+  } | null>(null);
+  // Ref so event handlers (which close over stale state) can read current value.
+  const textInputRef = useRef(textInput);
+  textInputRef.current = textInput;
 
   // Interaction state in refs — no re-render churn.
   const draft = useRef<{ type: DrawingType; points: DPoint[] } | null>(null);
@@ -217,6 +224,8 @@ export function DrawingLayer() {
 
   // ── pointer down: draw / select / drag ─────────────────────────────
   const onPointerDown = (e: React.PointerEvent) => {
+    // If the inline text editor is open, let its onBlur commit/cancel it first.
+    if (textInputRef.current) return;
     setCtxMenu(null);
     const tool = s.current.activeTool;
     const dp = unproject(e.clientX, e.clientY); if (!dp) return;
@@ -229,6 +238,15 @@ export function DrawingLayer() {
       //           TP = +3 %  above entry (long) or −3 %  below (short)
       // All 3 points share the same logical X so zones span the full canvas.
       // The user then drags the 3 handles to fine-tune levels.
+      // ── Text / Callout: open inline editor at click position ────────────
+      if (tool === 'text' || tool === 'callout') {
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        setTextInput({ dp, x: e.clientX - r.left, y: e.clientY - r.top, type: tool });
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
+
       if (tool === 'longpos' || tool === 'shortpos') {
         const isLong  = tool === 'longpos';
         const entry   = dp.price;
@@ -238,9 +256,9 @@ export function DrawingLayer() {
           id: newId(),
           type: tool,
           points: [
-            { logical: dp.logical, price: entry   },   // [0] entry
-            { logical: dp.logical, price: tpPrice },   // [1] target
-            { logical: dp.logical, price: slPrice },   // [2] stop
+            { logical: dp.logical, price: entry   },       // [0] entry
+            { logical: dp.logical + 15, price: tpPrice },  // [1] target
+            { logical: dp.logical + 15, price: slPrice },  // [2] stop
           ],
           style: { ...s.current.defaultStyle },
         };
@@ -375,14 +393,25 @@ export function DrawingLayer() {
     }
   };
 
+  // Commit an inline text/callout drawing from the floating editor.
+  const commitText = (value: string) => {
+    const ti = textInputRef.current; if (!ti) return;
+    setTextInput(null);
+    const trimmed = value.trim();
+    if (!trimmed) { if (!s.current.stayInDrawing) s.current.setTool('cursor'); return; }
+    const drawing: Drawing = {
+      id: newId(), type: ti.type, points: [ti.dp],
+      style: { ...s.current.defaultStyle }, text: trimmed,
+    };
+    s.current.addDrawing(drawing);
+    if (!s.current.stayInDrawing) s.current.setTool('cursor');
+  };
+
   function finishDraft() {
     const d = draft.current; if (!d) return;
     const style = { ...s.current.defaultStyle };
     const preset = s.current.consumePendingText();
-    let text: string | undefined = preset ?? undefined;
-    if (text == null && (d.type === 'text' || d.type === 'callout')) {
-      text = window.prompt('Text:', 'Text') || 'Text';
-    }
+    const text: string | undefined = preset ?? undefined;
     const drawing: Drawing = { id: newId(), type: d.type, points: d.points, style, text };
     s.current.addDrawing(drawing);
     draft.current = null; cursorPt.current = null;
@@ -397,6 +426,7 @@ export function DrawingLayer() {
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
       if (e.key === 'Escape') {
+        if (textInputRef.current) { setTextInput(null); s.current.setTool('cursor'); return; }
         draft.current = null; cursorPt.current = null;
         s.current.setTool('cursor'); s.current.select(null); s.current.clearMultiSelect();
         setCtxMenu(null);
@@ -445,6 +475,23 @@ export function DrawingLayer() {
 
       {/* ── Context menu ── */}
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
+
+      {/* ── Inline text / callout editor ── */}
+      {textInput && (
+        <input
+          key={`${textInput.x}-${textInput.y}`}
+          ref={(el) => { if (el) setTimeout(() => el.focus(), 10); }}
+          className="draw-text-input"
+          placeholder="Type text, Enter to confirm"
+          style={{ left: textInput.x, top: textInput.y }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { commitText((e.target as HTMLInputElement).value); }
+            if (e.key === 'Escape') { setTextInput(null); s.current.setTool('cursor'); }
+          }}
+          onBlur={(e) => commitText(e.target.value)}
+        />
+      )}
     </>
   );
 }

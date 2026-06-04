@@ -39,7 +39,8 @@ export type DrawingType =
   | 'ew_correction' // A-B-C      (4 points: 0→A→B→C)
   | 'ew_triangle'   // A-B-C-D-E  (6 points: 0→A→B→C→D→E)
   | 'ew_double'     // W-X-Y      (4 points: 0→W→X→Y)
-  | 'ew_triple';    // W-X-Y-X-Z  (6 points: 0→W→X→Y→X2→Z)
+  | 'ew_triple'     // W-X-Y-X-Z  (6 points: 0→W→X→Y→X2→Z)
+  | 'xabcd';        // X-A-B-C-D  (5 points)
 
 export interface DStyle {
   color: string;
@@ -76,6 +77,7 @@ export const POINT_COUNT: Record<DrawingType, number> = {
   ew_triangle:   6,  // start + A + B + C + D + E
   ew_double:     4,  // start + W + X + Y
   ew_triple:     6,  // start + W + X + Y + X2 + Z
+  xabcd:         5,  // X + A + B + C + D
 };
 
 // Wave labels per Elliott type
@@ -85,6 +87,7 @@ export const EW_LABELS: Record<string, string[]> = {
   ew_triangle:   ['0', 'A', 'B', 'C', 'D', 'E'],
   ew_double:     ['0', 'W', 'X', 'Y'],
   ew_triple:     ['0', 'W', 'X', 'Y', 'X', 'Z'],
+  xabcd:         ['X', 'A', 'B', 'C', 'D'],
 };
 
 export const DEFAULT_STYLE: DStyle = {

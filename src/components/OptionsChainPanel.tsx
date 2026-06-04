@@ -61,10 +61,69 @@ const fmtSpot = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits
 
 // ─── Component ────────────────────────────────────────────────────────────
 
+// ─── Persistence helpers (reuse same pattern as ChartWidgets) ────────────────
+function loadOcp<T>(key: string, def: T): T {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? def; } catch { return def; }
+}
+function saveOcp(key: string, val: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* */ }
+}
+
 export function OptionsChainPanel() {
   const closeChain       = useUiStore((s) => s.closeChain);
   const setSymbol        = useChartStore((s) => s.setSymbol);
   const currentSym       = useChartStore((s) => s.symbol.symbol);
+
+  // ── Collapse / drag state (like ChartWidgets) ─────────────────────────
+  const [collapsed, setCollapsed] = useState(() => loadOcp<boolean>('ocp:col', false));
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((v) => { saveOcp('ocp:col', !v); return !v; });
+  }, []);
+
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(
+    () => loadOcp<{ x: number; y: number } | null>('ocp:pos', null)
+  );
+  const posRef   = useRef(pos);
+  posRef.current = pos;
+  const dragging = useRef(false);
+  const origin   = useRef({ mx: 0, my: 0, wx: 0, wy: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const onHdrMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button,input,select')) return;
+    const el = panelRef.current;
+    const parent = el?.offsetParent as HTMLElement | null;
+    if (!el || !parent) return;
+    const er = el.getBoundingClientRect();
+    const pr = parent.getBoundingClientRect();
+    const wx = er.left - pr.left;
+    const wy = er.top  - pr.top;
+    dragging.current = true;
+    const newPos = { x: wx, y: wy };
+    setPos(newPos); posRef.current = newPos;
+    origin.current = { mx: e.clientX, my: e.clientY, wx, wy };
+    e.preventDefault(); e.stopPropagation();
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      setPos({ x: origin.current.wx + e.clientX - origin.current.mx,
+               y: origin.current.wy + e.clientY - origin.current.my });
+    };
+    const onUp = () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      saveOcp('ocp:pos', posRef.current);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const posStyle: React.CSSProperties = pos
+    ? { left: pos.x, top: pos.y, bottom: 'auto', right: 'auto' }
+    : {};
 
   const addPaperPos      = usePositionsStore((s) => s.add);
   const addLines         = usePriceLinesStore((s) => s.addEntryWithSlTp);
@@ -332,200 +391,213 @@ export function OptionsChainPanel() {
   const isMonthly = !WEEKLY_UNDERLYING.has(underlying.toUpperCase());
 
   return (
-    <div className="ocp-panel">
-      {/* ── Header ── */}
-      <div className="ocp-hdr">
+    <div
+      ref={panelRef}
+      className={`ocp-panel${collapsed ? ' ocp-collapsed' : ''}`}
+      style={posStyle}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* ── Header (drag handle) ── */}
+      <div className="ocp-hdr" onMouseDown={onHdrMouseDown} style={{ cursor: 'move' }}>
         <div className="ocp-ul-chips">
-          {UNDERLYINGS.map((ul) => (
+          {!collapsed && UNDERLYINGS.map((ul) => (
             <button
               key={ul}
               className={`ocp-ul-btn ${underlying === ul ? 'active' : ''}`}
               onClick={() => setUnderlying(ul)}
             >{ul}</button>
           ))}
+          {collapsed && (
+            <span className="ocp-collapsed-title">⛓ Option Chain · {underlying}</span>
+          )}
         </div>
         <div className="ocp-hdr-right">
-          {effectiveSpot > 0 && (
-            <span className="ocp-spot">₹{fmtSpot(effectiveSpot)}</span>
-          )}
+
+          <button className="ocp-toggle" onClick={toggleCollapsed} title={collapsed ? 'Expand' : 'Collapse'}>
+            {collapsed ? '▾' : '▴'}
+          </button>
           <button className="ocp-close" onClick={closeChain} title="Close">✕</button>
         </div>
       </div>
 
-      {/* ── Controls ── */}
-      <div className="ocp-controls">
-        <div className="ocp-expiry-chips">
-          {expiries.length === 0 && (
-            <span className="ocp-expiry-loading">Loading expiries…</span>
-          )}
-          {expiries.map((e, i) => (
-            <button
-              key={e.value}
-              className={`ocp-chip ${expiryIdx === i ? 'active' : ''}`}
-              onClick={() => setExpiryIdx(i)}
-              title={`${e.days}d${isMonthly ? ' · monthly' : ''}`}
-            >
-              {e.label}
-              {isMonthly && <span className="ocp-chip-mo">M</span>}
-            </button>
-          ))}
-        </div>
-        <div className="ocp-trade-ctrl">
-          <div className="ocp-side-toggle">
-            <button className={`ocp-side-btn buy ${side === 'buy' ? 'on' : ''}`} onClick={() => setSide('buy')}>BUY</button>
-            <button className={`ocp-side-btn sell ${side === 'sell' ? 'on' : ''}`} onClick={() => setSide('sell')}>SELL</button>
-          </div>
-          <label className="ocp-lots-wrap">
-            <span className="ocp-lots-label">Lots</span>
-            <input
-              className="ocp-lots-input"
-              type="number"
-              min={1}
-              value={lots}
-              onChange={(e) => setLots(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            />
-          </label>
-          {exp && (
-            <span className="ocp-qty-hint">
-              = {(lots * lotSize(underlying)).toLocaleString('en-IN')} qty · {exp.days}d exp
-            </span>
-          )}
-        </div>
-        <div className="ocp-depth-row">
-          <span className="ocp-depth-label">Rows ±ATM:</span>
-          {([4, 8, 12, 'all'] as const).map((d) => (
-            <button
-              key={String(d)}
-              className={`ocp-depth-chip ${depth === d ? 'active' : ''}`}
-              onClick={() => setDepth(d)}
-            >{d === 'all' ? 'All' : `±${d}`}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Chain table ── */}
-      <div className="ocp-chain-wrap">
-        <div className="ocp-chain-head">
-          <span>CALL (CE)</span>
-          <span>Strike</span>
-          <span>PUT (PE)</span>
-        </div>
-        <div ref={chainBodyRef} className="ocp-chain-body">
-          {loading && <div className="ocp-empty">Loading chain…</div>}
-          {!loading && chainError && (
-            <div className="ocp-empty ocp-chain-err">{chainError}</div>
-          )}
-          {!loading && !chainError && chain.length === 0 && (
-            <div className="ocp-empty">
-              {expiries.length === 0 ? 'Select an expiry' : 'No data'}
-            </div>
-          )}
-          {!loading && !chainError && visibleChain.map((row) => {
-            const isAtm       = row.strike === atmStrike;
-            const ceItm       = effectiveSpot > 0 && row.strike < effectiveSpot;
-            const peItm       = effectiveSpot > 0 && row.strike > effectiveSpot;
-            const cePKey      = `${row.strike}CE`;
-            const pePKey      = `${row.strike}PE`;
-            const cePlace     = placing === cePKey;
-            const pePlace     = placing === pePKey;
-            const isPendingCe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'CE';
-            const isPendingPe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'PE';
-
-            return (
-              <div
-                key={row.strike}
-                ref={isAtm ? (el) => { atmRowRef.current = el; } : undefined}
-                className={`ocp-chain-row ${isAtm ? 'atm' : ''}`}
-              >
-                {/* CE cell */}
+      {!collapsed && (
+        <>
+          {/* ── Controls ── */}
+          <div className="ocp-controls">
+            <div className="ocp-expiry-chips">
+              {expiries.length === 0 && (
+                <span className="ocp-expiry-loading">Loading expiries…</span>
+              )}
+              {expiries.map((e, i) => (
                 <button
-                  className={`ocp-ce-cell ${ceItm ? 'itm' : 'otm'} ${side}${isPendingCe ? ' selected' : ''}`}
-                  disabled={!row.callKey || (!!placing && !isPendingCe)}
-                  onClick={() => setPendingOrder({ row, optType: 'CE' })}
-                  title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'CE')}`}
+                  key={e.value}
+                  className={`ocp-chip ${expiryIdx === i ? 'active' : ''}`}
+                  onClick={() => setExpiryIdx(i)}
+                  title={`${e.days}d${isMonthly ? ' · monthly' : ''}`}
                 >
-                  {cePlace ? (
-                    <span className="ocp-placing">…</span>
-                  ) : (
-                    <>
-                      <span className="ocp-ltp">₹{fmt2(row.callLtp)}</span>
-                      {row.callOi > 0 && <span className="ocp-oi">{(row.callOi / 1000).toFixed(0)}K</span>}
-                    </>
-                  )}
+                  {e.label}
+                  {isMonthly && <span className="ocp-chip-mo">M</span>}
                 </button>
-
-                {/* Strike */}
-                <div className={`ocp-strike ${isAtm ? 'atm' : ''}`}>
-                  {row.strike.toLocaleString('en-IN')}
-                  {isAtm && <span className="ocp-atm-tag">ATM</span>}
-                </div>
-
-                {/* PE cell */}
+              ))}
+            </div>
+            <div className="ocp-trade-ctrl">
+              <div className="ocp-side-toggle">
+                <button className={`ocp-side-btn buy ${side === 'buy' ? 'on' : ''}`} onClick={() => setSide('buy')}>BUY</button>
+                <button className={`ocp-side-btn sell ${side === 'sell' ? 'on' : ''}`} onClick={() => setSide('sell')}>SELL</button>
+              </div>
+              <label className="ocp-lots-wrap">
+                <span className="ocp-lots-label">Lots</span>
+                <input
+                  className="ocp-lots-input"
+                  type="number"
+                  min={1}
+                  value={lots}
+                  onChange={(e) => setLots(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                />
+              </label>
+              {exp && (
+                <span className="ocp-qty-hint">
+                  = {(lots * lotSize(underlying)).toLocaleString('en-IN')} qty · {exp.days}d exp
+                </span>
+              )}
+            </div>
+            <div className="ocp-depth-row">
+              <span className="ocp-depth-label">Rows ±ATM:</span>
+              {([4, 8, 12, 'all'] as const).map((d) => (
                 <button
-                  className={`ocp-pe-cell ${peItm ? 'itm' : 'otm'} ${side}${isPendingPe ? ' selected' : ''}`}
-                  disabled={!row.putKey || (!!placing && !isPendingPe)}
-                  onClick={() => setPendingOrder({ row, optType: 'PE' })}
-                  title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'PE')}`}
+                  key={String(d)}
+                  className={`ocp-depth-chip ${depth === d ? 'active' : ''}`}
+                  onClick={() => setDepth(d)}
+                >{d === 'all' ? 'All' : `±${d}`}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Chain table ── */}
+          <div className="ocp-chain-wrap">
+            <div className="ocp-chain-head">
+              <span>CALL (CE)</span>
+              <span>Strike</span>
+              <span>PUT (PE)</span>
+            </div>
+            <div ref={chainBodyRef} className="ocp-chain-body">
+              {loading && <div className="ocp-empty">Loading chain…</div>}
+              {!loading && chainError && (
+                <div className="ocp-empty ocp-chain-err">{chainError}</div>
+              )}
+              {!loading && !chainError && chain.length === 0 && (
+                <div className="ocp-empty">
+                  {expiries.length === 0 ? 'Select an expiry' : 'No data'}
+                </div>
+              )}
+              {!loading && !chainError && visibleChain.map((row) => {
+                const isAtm       = row.strike === atmStrike;
+                const ceItm       = effectiveSpot > 0 && row.strike < effectiveSpot;
+                const peItm       = effectiveSpot > 0 && row.strike > effectiveSpot;
+                const cePKey      = `${row.strike}CE`;
+                const pePKey      = `${row.strike}PE`;
+                const cePlace     = placing === cePKey;
+                const pePlace     = placing === pePKey;
+                const isPendingCe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'CE';
+                const isPendingPe = pendingOrder?.row.strike === row.strike && pendingOrder?.optType === 'PE';
+
+                return (
+                  <div
+                    key={row.strike}
+                    ref={isAtm ? (el) => { atmRowRef.current = el; } : undefined}
+                    className={`ocp-chain-row ${isAtm ? 'atm' : ''}`}
+                  >
+                    {/* CE cell */}
+                    <button
+                      className={`ocp-ce-cell ${ceItm ? 'itm' : 'otm'} ${side}${isPendingCe ? ' selected' : ''}`}
+                      disabled={!row.callKey || (!!placing && !isPendingCe)}
+                      onClick={() => setPendingOrder({ row, optType: 'CE' })}
+                      title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'CE')}`}
+                    >
+                      {cePlace ? (
+                        <span className="ocp-placing">…</span>
+                      ) : (
+                        <>
+                          <span className="ocp-ltp">₹{fmt2(row.callLtp)}</span>
+                          {row.callOi > 0 && <span className="ocp-oi">{(row.callOi / 1000).toFixed(0)}K</span>}
+                        </>
+                      )}
+                    </button>
+
+                    {/* Strike */}
+                    <div className={`ocp-strike ${isAtm ? 'atm' : ''}`}>
+                      {row.strike.toLocaleString('en-IN')}
+                      {isAtm && <span className="ocp-atm-tag">ATM</span>}
+                    </div>
+
+                    {/* PE cell */}
+                    <button
+                      className={`ocp-pe-cell ${peItm ? 'itm' : 'otm'} ${side}${isPendingPe ? ' selected' : ''}`}
+                      disabled={!row.putKey || (!!placing && !isPendingPe)}
+                      onClick={() => setPendingOrder({ row, optType: 'PE' })}
+                      title={`${side.toUpperCase()} ${lots}L ${buildContractSymbol(underlying, exp?.value ?? '', row.strike, 'PE')}`}
+                    >
+                      {pePlace ? (
+                        <span className="ocp-placing">…</span>
+                      ) : (
+                        <>
+                          <span className="ocp-ltp">₹{fmt2(row.putLtp)}</span>
+                          {row.putOi > 0 && <span className="ocp-oi">{(row.putOi / 1000).toFixed(0)}K</span>}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Pending Order Confirmation ── */}
+          {pendingOrder && exp && (
+            <div className="ocp-pending">
+              <div className="ocp-pending-info">
+                <span className={`ocp-pending-type ${pendingOrder.optType === 'CE' ? 'ce' : 'pe'}`}>
+                  {pendingOrder.optType}
+                </span>
+                <span className="ocp-pending-contract">
+                  {buildContractSymbol(underlying, exp.value, pendingOrder.row.strike, pendingOrder.optType)}
+                </span>
+                <span className="ocp-pending-ltp">
+                  ₹{fmt2(pendingOrder.optType === 'CE' ? pendingOrder.row.callLtp : pendingOrder.row.putLtp)}
+                </span>
+                <span className={`ocp-pending-side ${side}`}>{side.toUpperCase()}</span>
+                <span className="ocp-pending-lots">{lots}L</span>
+              </div>
+              <div className="ocp-pending-btns">
+                <button className="ocp-pending-cancel" onClick={() => setPendingOrder(null)}>✕</button>
+                <button
+                  className={`ocp-pending-place ${side}`}
+                  disabled={placing === `${pendingOrder.row.strike}${pendingOrder.optType}`}
+                  onClick={async () => {
+                    const snap = pendingOrder;
+                    try { await placeTrade(snap.row, snap.optType); }
+                    finally { setPendingOrder(null); }
+                  }}
                 >
-                  {pePlace ? (
-                    <span className="ocp-placing">…</span>
-                  ) : (
-                    <>
-                      <span className="ocp-ltp">₹{fmt2(row.putLtp)}</span>
-                      {row.putOi > 0 && <span className="ocp-oi">{(row.putOi / 1000).toFixed(0)}K</span>}
-                    </>
-                  )}
+                  {placing === `${pendingOrder.row.strike}${pendingOrder.optType}`
+                    ? 'Placing…'
+                    : `Place ${side.toUpperCase()}`}
                 </button>
               </div>
-            );
-          })}
-        </div>
-      </div>
+            </div>
+          )}
 
-      {/* ── Pending Order Confirmation ── */}
-      {pendingOrder && exp && (
-        <div className="ocp-pending">
-          <div className="ocp-pending-info">
-            <span className={`ocp-pending-type ${pendingOrder.optType === 'CE' ? 'ce' : 'pe'}`}>
-              {pendingOrder.optType}
-            </span>
-            <span className="ocp-pending-contract">
-              {buildContractSymbol(underlying, exp.value, pendingOrder.row.strike, pendingOrder.optType)}
-            </span>
-            <span className="ocp-pending-ltp">
-              ₹{fmt2(pendingOrder.optType === 'CE' ? pendingOrder.row.callLtp : pendingOrder.row.putLtp)}
-            </span>
-            <span className={`ocp-pending-side ${side}`}>{side.toUpperCase()}</span>
-            <span className="ocp-pending-lots">{lots}L</span>
+          {/* ── Footer ── */}
+          <div className="ocp-footer">
+            {isLive
+              ? brokerSandbox
+                ? '⬡ Sandbox — simulated fills'
+                : '● Live orders — real Upstox execution'
+              : '◻ Paper trading — no real funds'}
+            <button className="ocp-refresh" onClick={fetchChain} title="Refresh chain">↺</button>
           </div>
-          <div className="ocp-pending-btns">
-            <button className="ocp-pending-cancel" onClick={() => setPendingOrder(null)}>✕</button>
-            <button
-              className={`ocp-pending-place ${side}`}
-              disabled={placing === `${pendingOrder.row.strike}${pendingOrder.optType}`}
-              onClick={async () => {
-                const snap = pendingOrder;
-                try { await placeTrade(snap.row, snap.optType); }
-                finally { setPendingOrder(null); }
-              }}
-            >
-              {placing === `${pendingOrder.row.strike}${pendingOrder.optType}`
-                ? 'Placing…'
-                : `Place ${side.toUpperCase()}`}
-            </button>
-          </div>
-        </div>
+        </>
       )}
-
-      {/* ── Footer ── */}
-      <div className="ocp-footer">
-        {isLive
-          ? brokerSandbox
-            ? '⬡ Sandbox — simulated fills'
-            : '● Live orders — real Upstox execution'
-          : '◻ Paper trading — no real funds'}
-        <button className="ocp-refresh" onClick={fetchChain} title="Refresh chain">↺</button>
-      </div>
     </div>
   );
 }

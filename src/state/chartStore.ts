@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ChartType, Interval, SymbolInfo } from '../data/types';
+import { usePanelsStore } from './panelsStore';
 
 interface ChartState {
   symbol: SymbolInfo;
@@ -20,9 +21,21 @@ export const useChartStore = create<ChartState>((set) => ({
   symbol: { symbol: 'NIFTY', name: 'Nifty 50 Index', exchange: 'NSE', kind: 'index' },
   interval: '1D',
   chartType: 'candles',
-  setSymbol: (symbol) => set({ symbol }),
-  setInterval: (interval) => set({ interval }),
-  setChartType: (chartType) => set({ chartType }),
+  setSymbol: (symbol) => {
+    set({ symbol });
+    const { activeId, updatePanel } = usePanelsStore.getState();
+    updatePanel(activeId, { symbol });
+  },
+  setInterval: (interval) => {
+    set({ interval });
+    const { activeId, updatePanel } = usePanelsStore.getState();
+    updatePanel(activeId, { interval });
+  },
+  setChartType: (chartType) => {
+    set({ chartType });
+    const { activeId, updatePanel } = usePanelsStore.getState();
+    updatePanel(activeId, { chartType });
+  },
   dataVersion: 0,
   bumpData: () => set((s) => ({ dataVersion: s.dataVersion + 1 })),
   barCount: 0,

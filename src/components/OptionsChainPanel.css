@@ -18,6 +18,13 @@
   user-select: none;
 }
 
+/* Collapsed: panel shrinks to header bar only */
+.ocp-panel.ocp-collapsed {
+  max-height: none;
+  height: auto;
+  width: 280px;
+}
+
 /* ── Header ── */
 .ocp-hdr {
   display: flex;
@@ -70,6 +77,29 @@
   line-height: 1;
 }
 .ocp-close:hover { color: var(--text); }
+
+/* Minimize / expand toggle */
+.ocp-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+}
+.ocp-toggle:hover { color: var(--text); }
+
+/* Title shown when collapsed */
+.ocp-collapsed-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
 
 /* ── Controls ── */
 .ocp-controls {

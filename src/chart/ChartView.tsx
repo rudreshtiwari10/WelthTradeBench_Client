@@ -9,13 +9,16 @@ import { useSettingsStore } from '../state/settingsStore';
 import { useChartBridge } from '../state/chartBridge';
 import { createPriceSeries, priceData, volumeData, type PriceSeries } from './series';
 import { useChartStore } from '../state/chartStore';
+import { usePanelsStore } from '../state/panelsStore';
+import { usePanelId } from '../state/PanelContext';
 import { useDrawingStore } from '../state/drawingStore';
 import { useReplayStore } from '../state/replayStore';
 import { fetchHistory, liveFeed } from '../data/dataService';
 import { useToastStore } from '../state/toastStore';
 import { useBrokerStore } from '../state/brokerStore';
-import type { Candle } from '../data/types';
+import type { Candle, SymbolInfo, Interval, ChartType } from '../data/types';
 import { ChartContext } from './ChartContext';
+import { PanelHeader } from '../components/PanelHeader';
 import { DrawingLayer } from '../drawings/DrawingLayer';
 import { DrawingToolbarState } from '../drawings/DrawingProperties';
 import { IndicatorsRenderer } from '../indicators/IndicatorsRenderer';
@@ -29,12 +32,15 @@ import { ObjectTree } from '../components/ObjectTree';
 import { ChartWidgets } from '../components/ChartWidgets';
 import { PositionLines } from '../components/PositionLines';
 import { CandleTimer } from './CandleTimer';
+import { isMarketOpen } from './marketHours';
 import './ChartView.css';
 
 interface LegendData {
   open: number; high: number; low: number; close: number;
   prevClose: number; volume: number;
 }
+
+const DEFAULT_SYMBOL: SymbolInfo = { symbol: 'NIFTY', name: 'Nifty 50 Index', exchange: 'NSE', kind: 'index' };
 
 const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtVol = (n: number) =>
@@ -47,7 +53,12 @@ export function ChartView() {
   const volSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
 
-  const { symbol, interval, chartType } = useChartStore();
+  const panelId = usePanelId();
+  const symbol   = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.symbol   ?? DEFAULT_SYMBOL);
+  const interval = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.interval ?? '1D') as Interval;
+  const chartType = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.chartType ?? 'candles') as ChartType;
+  const layout = usePanelsStore((s) => s.layout);
+  const isSplit = layout !== 'single';
   const loadDrawings = useDrawingStore((s) => s.loadFor);
   const pushToast = useToastStore((s) => s.push);
   const [ready, setReady] = useState(false);
@@ -153,7 +164,7 @@ export function ChartView() {
 
     setReady(true);
     loadDrawings(`${symbol.symbol}:${interval}`);
-    useChartStore.getState().setBarCount(0);
+    if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(0);
     useChartStore.getState().bumpData();
 
     // Fetch history for all instruments so the chart is never blank on load.
@@ -172,7 +183,7 @@ export function ChartView() {
         const last = candles[candles.length - 1];
         const prev = candles[candles.length - 2];
         if (last) setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });
-        useChartStore.getState().setBarCount(candles.length);
+        if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(candles.length);
         useChartStore.getState().bumpData();
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return;
@@ -234,7 +245,7 @@ export function ChartView() {
   // regardless of interval (75 bars on 5m, 375 on 1m, 1 bar on 1D, etc.).
   const rangeReq = useChartStore((st) => st.rangeReq);
   useEffect(() => {
-    if (!rangeReq) return;
+    if (!rangeReq || usePanelsStore.getState().activeId !== panelId) return;
     const chart = chartRef.current;
     const candles = candlesRef.current;
     if (!chart || candles.length === 0) return;
@@ -307,9 +318,9 @@ export function ChartView() {
   //  • New bar period   → opens bar with previous close as open, scrolls
   //                       chart rightward so the advancing bar is always visible.
   //
-  // Bar boundaries use IST-aligned epoch math so they match Upstox's own bar
-  // timestamps for every interval and exchange (NSE, MCX, BSE):
-  //   barTs = floor((tick.ts + 19800) / intervalSec) * intervalSec − 19800
+  // Bar boundaries are anchored to 09:15 IST (MOPEN_UTC = 13500 s from midnight UTC)
+  // to match Upstox's candle timestamp convention for every interval and exchange:
+  //   barTs = floor((tick.ts − 13500) / intervalSec) * intervalSec + 13500
   //
   // MOCK derivatives (MOCK:option:… / MOCK:future:…) skip this subscription —
   // they have no live tick stream and use static REST history instead.
@@ -321,11 +332,16 @@ export function ChartView() {
       '1H': 3600, '2H': 7200, '4H': 14400,
       '1D': 86400, '1W': 604800, '1M': 2592000,
     };
-    const IST = 19800; // UTC+5:30 in seconds
+    // 09:15 IST = 03:45 UTC = 13500 s from midnight UTC.
+    // Upstox timestamps ALL candle intervals (1m through 1M) relative to this anchor.
+    const MOPEN_UTC = 13500;
 
+    // Single anchor for every interval: 09:15 IST = 03:45 UTC = 13500 s from midnight UTC.
+    // Upstox timestamps ALL candles (1m → 1M) relative to this market-open anchor,
+    // so using it here makes live barTs() match historical candle timestamps exactly.
     const barTs = (tickTs: number): number => {
       const sec = INTERVAL_SEC[intervalRef.current] ?? 86400;
-      return Math.floor((tickTs + IST) / sec) * sec - IST;
+      return Math.floor((tickTs - MOPEN_UTC) / sec) * sec + MOPEN_UTC;
     };
 
     // ── Shared helper: push a new bar onto candles + update chart ──────────
@@ -366,11 +382,11 @@ export function ChartView() {
       const nowMs  = Date.now();
       const nowSec = nowMs / 1000;
       const sec    = INTERVAL_SEC[intervalRef.current] ?? 86400;
-      const nextBarStart = (Math.floor((nowSec + IST) / sec) + 1) * sec - IST;
+      const nextBarStart = (Math.floor((nowSec - MOPEN_UTC) / sec) + 1) * sec + MOPEN_UTC;
       const delay  = Math.max(50, (nextBarStart - nowSec) * 1000);
 
       boundaryTimer = setTimeout(() => {
-        if (!useReplayStore.getState().active) {
+        if (!useReplayStore.getState().active && isMarketOpen(symbol.kind)) {
           const candles = candlesRef.current;
           const ts = barTs(Math.floor(Date.now() / 1000));
           if (candles.length && ts > candles[candles.length - 1].time) {
@@ -429,7 +445,8 @@ export function ChartView() {
 
   return (
     <ChartContext.Provider value={{ chartRef, seriesRef: priceSeriesRef, candlesRef, containerRef, ready }}>
-      <div className="chart-view">
+      <div className={`chart-view${isSplit ? ' has-panel-header' : ''}`}>
+        {isSplit && <PanelHeader />}
         <div className="chart-legend">
           <div className="legend-row">
             <span className="legend-symbol">{symbol.name}</span>
@@ -491,7 +508,7 @@ export function ChartView() {
         <ObjectTree />
         {ready && <PositionLines />}
         {ready && <CandleTimer />}
-        <ChartWidgets />
+        {panelId === 'p1' && <ChartWidgets />}
 
         <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
 

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useChartApi } from './ChartContext';
-import { useChartStore } from '../state/chartStore';
+import { usePanelsStore } from '../state/panelsStore';
+import { usePanelId } from '../state/PanelContext';
+import { isMarketOpen } from './marketHours';
 
 const INTERVAL_SEC: Record<string, number> = {
   '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
   '1H': 3600, '2H': 7200, '4H': 14400,
   '1D': 86400, '1W': 604800, '1M': 2592000,
 };
-
-const IST = 19800; // UTC+5:30 in seconds
 
 function fmtRemaining(sec: number): string {
   if (sec <= 0) return '0:00';
@@ -32,7 +32,9 @@ interface TimerDisplay {
 
 export function CandleTimer() {
   const { seriesRef, candlesRef } = useChartApi();
-  const interval = useChartStore((s) => s.interval);
+  const panelId = usePanelId();
+  const interval = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.interval ?? '1D');
+  const symbolKind = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.symbol.kind);
   const [display, setDisplay] = useState<TimerDisplay | null>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function CandleTimer() {
       const candles = candlesRef.current;
       const series  = seriesRef.current;
 
-      if (!candles.length || !series) {
+      if (!candles.length || !series || !isMarketOpen(symbolKind)) {
         setDisplay(null);
       } else {
         const last = candles[candles.length - 1];
@@ -54,8 +56,9 @@ export function CandleTimer() {
         const nowMs  = Date.now();
         const nowSec = Math.floor(nowMs / 1000);
 
-        // IST-aligned bar boundary — identical to the tick handler's barTs formula.
-        const barStart  = Math.floor((nowSec + IST) / intervalSec) * intervalSec - IST;
+        // 09:15 IST anchor — mirrors ChartView's barTs for all intervals.
+        const MOPEN_UTC = 13500;
+        const barStart = Math.floor((nowSec - MOPEN_UTC) / intervalSec) * intervalSec + MOPEN_UTC;
         const remaining = Math.max(0, barStart + intervalSec - nowSec);
 
         const text = fmtRemaining(remaining);
@@ -89,9 +92,9 @@ export function CandleTimer() {
     update();
 
     return () => clearTimeout(timeoutId);
-    // seriesRef / candlesRef are stable refs; only interval drives re-setup.
+    // seriesRef / candlesRef are stable refs; interval and symbolKind drive re-setup.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interval]);
+  }, [interval, symbolKind]);
 
   if (!display) return null;
 

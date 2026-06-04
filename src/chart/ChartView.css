@@ -9,6 +9,14 @@
   inset: 0;
 }
 
+/* When a per-panel header strip is present, push the canvas + legend below it */
+.chart-view.has-panel-header .chart-canvas {
+  top: 32px;
+}
+.chart-view.has-panel-header .chart-legend {
+  top: 40px; /* 32px header + 8px gap */
+}
+
 .chart-view .chart-legend {
   position: absolute;
   top: 8px;

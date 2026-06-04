@@ -69,10 +69,11 @@ function formatOptionSymbol(underlying: string, strike: number, type: 'CE' | 'PE
 type SearchTab = 'symbols' | 'options' | 'futures';
 
 // ─── Main component ───────────────────────────────────────────────────────
-export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
+export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '', onSelect }: {
   onClose: () => void;
   mode?: 'replace' | 'compare';
   initialQuery?: string;
+  onSelect?: (sym: SymbolInfo) => void;
 }) {
   const setSymbol = useChartStore((s) => s.setSymbol);
   const addCompare = useCompareStore((s) => s.add);
@@ -157,6 +158,7 @@ export function SymbolSearch({ onClose, mode = 'replace', initialQuery = '' }: {
   // ── Choose handlers ───────────────────────────────────────────────────
   const choose = (info: SymbolInfo) => {
     if (mode === 'compare') addCompare(info.symbol, info.name);
+    else if (onSelect) onSelect(info);
     else setSymbol(info);
     onClose();
   };

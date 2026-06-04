@@ -1,4 +1,4 @@
-import { ColorType, CrosshairMode, LineStyle, type DeepPartial, type ChartOptions } from 'lightweight-charts';
+import { ColorType, CrosshairMode, LineStyle, TickMarkType, type DeepPartial, type ChartOptions } from 'lightweight-charts';
 
 // IST offset in seconds (UTC+5:30).
 const IST_OFFSET = 19800;
@@ -13,16 +13,39 @@ function toIST(utcSec: number): Date {
   return new Date((utcSec + IST_OFFSET) * 1000);
 }
 
-/** HH:MM in IST — used for intraday x-axis labels and crosshair. */
+/** HH:MM in IST */
 function istTimeFormatter(utcSec: number): string {
   const d = toIST(utcSec);
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
 
-/** "D Mon YYYY" in IST — used for daily/weekly/monthly x-axis labels. */
+/** "D Mon YYYY" in IST */
 function istDateFormatter(utcSec: number): string {
   const d = toIST(utcSec);
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * x-axis tick mark labels in IST.
+ * lightweight-charts calls this for every grid label; without it the library
+ * falls back to UTC-based formatting, making intraday times wrong for IST users.
+ */
+function istTickMarkFormatter(utcSec: number, markType: TickMarkType): string {
+  const d = toIST(utcSec);
+  switch (markType) {
+    case TickMarkType.Year:
+      return String(d.getUTCFullYear());
+    case TickMarkType.Month:
+      return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    case TickMarkType.DayOfMonth:
+      return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+    case TickMarkType.Time:
+      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+    case TickMarkType.TimeWithSeconds:
+      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`;
+    default:
+      return istDateFormatter(utcSec);
+  }
 }
 
 // TradingView "dark" theme for the lightweight-charts instance.
@@ -60,6 +83,7 @@ export const chartOptions: DeepPartial<ChartOptions> = {
     secondsVisible: false,
     rightOffset: 6,
     barSpacing: 7,
+    tickMarkFormatter: istTickMarkFormatter,
   },
   handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
   handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
