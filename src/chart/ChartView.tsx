@@ -14,6 +14,7 @@ import { usePanelId } from '../state/PanelContext';
 import { useDrawingStore } from '../state/drawingStore';
 import { useReplayStore } from '../state/replayStore';
 import { fetchHistory, liveFeed } from '../data/dataService';
+import { getSyncedTime } from '../utils/timeSync';
 import { useToastStore } from '../state/toastStore';
 import { useBrokerStore } from '../state/brokerStore';
 import type { Candle, SymbolInfo, Interval, ChartType } from '../data/types';
@@ -34,6 +35,25 @@ import { PositionLines } from '../components/PositionLines';
 import { CandleTimer } from './CandleTimer';
 import { isMarketOpen } from './marketHours';
 import './ChartView.css';
+
+const IST_OFFSET_MS = 19800 * 1000; // UTC+5:30 in milliseconds
+
+function LiveClock() {
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date(getSyncedTime() + IST_OFFSET_MS);
+      const h = String(d.getUTCHours()).padStart(2, '0');
+      const m = String(d.getUTCMinutes()).padStart(2, '0');
+      const s = String(d.getUTCSeconds()).padStart(2, '0');
+      setTime(`${h}:${m}:${s} IST`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <div className="chart-ist-clock">{time}</div>;
+}
 
 interface LegendData {
   open: number; high: number; low: number; close: number;
@@ -379,16 +399,16 @@ export function ChartView() {
     let boundaryTimer: ReturnType<typeof setTimeout>;
 
     const scheduleBoundary = () => {
-      const nowMs  = Date.now();
+      const nowMs  = getSyncedTime();
       const nowSec = nowMs / 1000;
       const sec    = INTERVAL_SEC[intervalRef.current] ?? 86400;
       const nextBarStart = (Math.floor((nowSec - MOPEN_UTC) / sec) + 1) * sec + MOPEN_UTC;
       const delay  = Math.max(50, (nextBarStart - nowSec) * 1000);
 
       boundaryTimer = setTimeout(() => {
-        if (!useReplayStore.getState().active && isMarketOpen(symbol.kind)) {
+        if (!useReplayStore.getState().active && isMarketOpen(symbol.kind, getSyncedTime())) {
           const candles = candlesRef.current;
-          const ts = barTs(Math.floor(Date.now() / 1000));
+          const ts = barTs(Math.floor(getSyncedTime() / 1000));
           if (candles.length && ts > candles[candles.length - 1].time) {
             openNewBar(ts, candles[candles.length - 1].close);
           }
@@ -511,6 +531,7 @@ export function ChartView() {
         {panelId === 'p1' && <ChartWidgets />}
 
         <div className="chart-watermark"><span className="wm-logo">◧</span> TradingView</div>
+        <LiveClock />
 
         {menu && (
           <>

@@ -140,6 +140,24 @@
 .candle-timer.timer-up   { background: var(--up);   }
 .candle-timer.timer-down { background: var(--down);  }
 
+/* ── IST live clock — bottom-right of time scale, replaces "UTC" label ── */
+.chart-ist-clock {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  z-index: 5;
+  font-size: 11px;
+  font-family: "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: #b2b5be;
+  background: #131722;
+  padding: 1px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* Right-click context menu */
 .ctx-backdrop {
   position: fixed;

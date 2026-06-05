@@ -3,6 +3,7 @@ import { useChartApi } from './ChartContext';
 import { usePanelsStore } from '../state/panelsStore';
 import { usePanelId } from '../state/PanelContext';
 import { isMarketOpen } from './marketHours';
+import { getSyncedTime } from '../utils/timeSync';
 
 const INTERVAL_SEC: Record<string, number> = {
   '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
@@ -44,16 +45,16 @@ export function CandleTimer() {
       const candles = candlesRef.current;
       const series  = seriesRef.current;
 
-      if (!candles.length || !series || !isMarketOpen(symbolKind)) {
+      if (!candles.length || !series || !isMarketOpen(symbolKind, getSyncedTime())) {
         setDisplay(null);
       } else {
         const last = candles[candles.length - 1];
         const prev = candles[candles.length - 2];
         const intervalSec = INTERVAL_SEC[interval] ?? 86400;
 
-        // Use real-time wall clock (millisecond precision) so the countdown is
-        // always computed from the true current moment, not a stale snapshot.
-        const nowMs  = Date.now();
+        // Use server-synced time so the countdown matches actual market time,
+        // not the user's potentially skewed local clock.
+        const nowMs  = getSyncedTime();
         const nowSec = Math.floor(nowMs / 1000);
 
         // 09:15 IST anchor — mirrors ChartView's barTs for all intervals.
@@ -84,7 +85,7 @@ export function CandleTimer() {
       // second.  Computing this AFTER the update body means execution time is
       // already absorbed, so the next fire lands precisely on the second boundary
       // with no drift accumulation.
-      const msToNextSec = 1000 - (Date.now() % 1000);
+      const msToNextSec = 1000 - (getSyncedTime() % 1000);
       timeoutId = setTimeout(update, msToNextSec);
     };
 

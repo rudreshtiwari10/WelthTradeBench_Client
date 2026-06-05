@@ -1,4 +1,5 @@
 import type { Candle, Interval, SymbolInfo } from './types';
+import { syncTimeWithTick } from '../utils/timeSync';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -110,8 +111,10 @@ class LiveFeed {
       if (msg.type === 'hello') {
         this.mode = msg.mode;
       } else if (msg.type === 'tick') {
+        syncTimeWithTick(msg.ts);
         this.handlers.get(msg.symbol)?.forEach((h) => h(msg));
       } else if (msg.type === 'option_tick') {
+        syncTimeWithTick(msg.ts);
         this.keyHandlers.get(msg.key)?.forEach((h) => h(msg.key, msg.ltp, msg.ts));
       }
     };
