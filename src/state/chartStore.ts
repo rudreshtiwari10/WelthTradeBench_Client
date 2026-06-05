@@ -15,6 +15,8 @@ interface ChartState {
   setBarCount: (n: number) => void;
   rangeReq: { label: string; nonce: number } | null;  // bottom-bar timeframe request
   requestRange: (label: string) => void;
+  backtestMode: boolean;
+  toggleBacktestMode: (val?: boolean) => void;
 }
 
 export const useChartStore = create<ChartState>((set) => ({
@@ -42,4 +44,6 @@ export const useChartStore = create<ChartState>((set) => ({
   setBarCount: (barCount) => set({ barCount }),
   rangeReq: null,
   requestRange: (label) => set((s) => ({ rangeReq: { label, nonce: (s.rangeReq?.nonce ?? 0) + 1 } })),
+  backtestMode: false,
+  toggleBacktestMode: (val) => set((s) => ({ backtestMode: val !== undefined ? val : !s.backtestMode })),
 }));

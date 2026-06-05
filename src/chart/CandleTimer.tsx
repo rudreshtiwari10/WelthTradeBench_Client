@@ -57,8 +57,8 @@ export function CandleTimer() {
         const nowMs  = getSyncedTime();
         const nowSec = Math.floor(nowMs / 1000);
 
-        // 09:15 IST anchor — mirrors ChartView's barTs for all intervals.
-        const MOPEN_UTC = 13500;
+        // Mirror ChartView's per-exchange anchor: MCX 09:00 IST (12600), NSE 09:15 IST (13500).
+        const MOPEN_UTC = symbolKind === 'commodity' ? 12600 : 13500;
         const barStart = Math.floor((nowSec - MOPEN_UTC) / intervalSec) * intervalSec + MOPEN_UTC;
         const remaining = Math.max(0, barStart + intervalSec - nowSec);
 

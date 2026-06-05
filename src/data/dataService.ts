@@ -7,8 +7,8 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 export interface HistoryResponse {
   symbol: string;
   interval: Interval;
-  source: 'upstox' | 'mock';
-  /** Set when Upstox was connected but returned no data and we fell back to mock. */
+  source: 'upstox' | 'mock' | 'yahoo';
+  /** Advisory message — e.g. commodity USD prices in backtest mode. */
   source_warning?: string;
   info: SymbolInfo;
   candles: Candle[];
@@ -32,6 +32,22 @@ export async function fetchHistory(
   if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
   const r = await fetch(url, signal ? { signal } : undefined);
   if (!r.ok) throw new Error(`history ${r.status}`);
+  return r.json();
+}
+
+/**
+ * Yahoo Finance max-depth historical data — used exclusively in Backtest Mode.
+ * Returns the same HistoryResponse shape as fetchHistory so ChartView works unchanged.
+ * Max depth: 1m=7d · 5m/15m/30m=60d · 1H=2y · 1D=10y · 1W/1M=20y
+ */
+export async function fetchBacktestHistory(
+  symbol: string,
+  interval: Interval,
+  signal?: AbortSignal,
+): Promise<HistoryResponse> {
+  const url = `${API_BASE}/api/backtest/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}`;
+  const r = await fetch(url, signal ? { signal } : undefined);
+  if (!r.ok) throw new Error(`backtest history ${r.status}`);
   return r.json();
 }
 

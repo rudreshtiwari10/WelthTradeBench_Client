@@ -13,7 +13,7 @@ import { usePanelsStore } from '../state/panelsStore';
 import { usePanelId } from '../state/PanelContext';
 import { useDrawingStore } from '../state/drawingStore';
 import { useReplayStore } from '../state/replayStore';
-import { fetchHistory, liveFeed } from '../data/dataService';
+import { fetchHistory, fetchBacktestHistory, liveFeed } from '../data/dataService';
 import { getSyncedTime } from '../utils/timeSync';
 import { useToastStore } from '../state/toastStore';
 import { useBrokerStore } from '../state/brokerStore';
@@ -79,6 +79,7 @@ export function ChartView() {
   const chartType = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.chartType ?? 'candles') as ChartType;
   const layout = usePanelsStore((s) => s.layout);
   const isSplit = layout !== 'single';
+  const backtestMode = useChartStore((s) => s.backtestMode);
   const loadDrawings = useDrawingStore((s) => s.loadFor);
   const pushToast = useToastStore((s) => s.push);
   const [ready, setReady] = useState(false);
@@ -192,10 +193,17 @@ export function ChartView() {
     const ac = new AbortController();
     (async () => {
       try {
-        const res = await fetchHistory(symbol.symbol, interval, 300, symbol.instrumentKey, ac.signal);
+        const res = backtestMode
+          ? await fetchBacktestHistory(symbol.symbol, interval, ac.signal)
+          : await fetchHistory(symbol.symbol, interval, 300, symbol.instrumentKey, ac.signal);
         if (ac.signal.aborted || priceSeriesRef.current !== priceSeries) return;
+        // Surface any advisory from Yahoo Finance (e.g. MCX USD price warning).
+        if (backtestMode && res.source_warning) pushToast(res.source_warning);
         const candles = res.candles;
-        if (!candles.length) return;
+        if (!candles.length) {
+          if (backtestMode) pushToast(`No backtest data found for ${symbol.symbol} (${interval})`);
+          return;
+        }
         candlesRef.current = candles;
         priceSeries.setData(priceData(candles, chartType) as any);
         volSeriesRef.current!.setData(volumeData(candles) as any);
@@ -207,12 +215,13 @@ export function ChartView() {
         useChartStore.getState().bumpData();
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return;
+        if (backtestMode) pushToast(`Backtest data unavailable for ${symbol.symbol} ${interval} — try a different timeframe`);
         console.error('[ChartView] history fetch failed:', e);
       }
     })();
     return () => { ac.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartType, symbol.symbol, interval]);
+  }, [chartType, symbol.symbol, interval, backtestMode]);
 
   // Re-skin the chart when the app theme changes.
   const theme = useUiStore((st) => st.theme);
@@ -345,20 +354,21 @@ export function ChartView() {
   // MOCK derivatives (MOCK:option:… / MOCK:future:…) skip this subscription —
   // they have no live tick stream and use static REST history instead.
   useEffect(() => {
-    if (symbol.instrumentKey?.startsWith('MOCK:')) return;
+    if (symbol.instrumentKey?.startsWith('MOCK:') || backtestMode) return;
 
     const INTERVAL_SEC: Record<string, number> = {
       '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
       '1H': 3600, '2H': 7200, '4H': 14400,
       '1D': 86400, '1W': 604800, '1M': 2592000,
     };
-    // 09:15 IST = 03:45 UTC = 13500 s from midnight UTC.
-    // Upstox timestamps ALL candle intervals (1m through 1M) relative to this anchor.
-    const MOPEN_UTC = 13500;
+    // Market-open anchor in seconds from UTC midnight.
+    //   NSE/BSE : 09:15 IST = 03:45 UTC = 13500 s
+    //   MCX     : 09:00 IST = 03:30 UTC = 12600 s
+    // Using the wrong anchor shifts every bucket by 900 s.  For daily charts this
+    // makes the live tick land at a different timestamp than the last historical bar
+    // → a duplicate candle appears on the chart instead of updating in place.
+    const MOPEN_UTC = symbol.kind === 'commodity' ? 12600 : 13500;
 
-    // Single anchor for every interval: 09:15 IST = 03:45 UTC = 13500 s from midnight UTC.
-    // Upstox timestamps ALL candles (1m → 1M) relative to this market-open anchor,
-    // so using it here makes live barTs() match historical candle timestamps exactly.
     const barTs = (tickTs: number): number => {
       const sec = INTERVAL_SEC[intervalRef.current] ?? 86400;
       return Math.floor((tickTs - MOPEN_UTC) / sec) * sec + MOPEN_UTC;
@@ -456,7 +466,7 @@ export function ChartView() {
 
     return () => { unsub(); clearTimeout(boundaryTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol.symbol, symbol.instrumentKey]);
+  }, [symbol.symbol, symbol.instrumentKey, backtestMode]);
 
   const up = legend ? legend.close >= legend.prevClose : true;
   const chg = legend ? legend.close - legend.prevClose : 0;

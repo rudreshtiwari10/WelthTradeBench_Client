@@ -28,7 +28,7 @@ const INTERVAL_SHORT: Record<string, string> = {
 };
 
 export function TopToolbar() {
-  const { symbol, interval, chartType, setInterval, setChartType } = useChartStore();
+  const { symbol, interval, chartType, setInterval, setChartType, backtestMode, toggleBacktestMode } = useChartStore();
   const { openIndicators, openSettings, theme, toggleTheme, setChartOnly, chainOpen, toggleChain } = useUiStore();
   const replay = useReplayStore();
   const addAlert = useAlertStore((s) => s.add);
@@ -166,6 +166,13 @@ export function TopToolbar() {
         </button>
         <button className="pill-btn" title="Create Alert" onClick={createAlert}><Icon name="alert" size={18} /><span>Alert</span></button>
         <button className={`pill-btn ${replay.active ? 'strong' : ''}`} title="Bar Replay" onClick={toggleReplay}><Icon name="replay" size={18} /><span>Replay</span></button>
+        <button
+          className={`pill-btn${backtestMode ? ' backtest-active' : ''}`}
+          title="Backtest Mode — loads 2000 bars of history and disconnects the live feed"
+          onClick={() => toggleBacktestMode()}
+        >
+          <span>Backtest</span>
+        </button>
 
         <div className="sep" />
 
