@@ -4,6 +4,8 @@ import { useUiStore } from '../state/uiStore';
 import { useHistoryStore } from '../state/historyStore';
 import { useChartStore } from '../state/chartStore';
 import { useChartBridge } from '../state/chartBridge';
+import { useLayoutStore } from '../state/layoutStore';
+import { useToastStore } from '../state/toastStore';
 import type { Interval } from '../data/types';
 
 // Single printable characters that are reserved for other actions and
@@ -83,6 +85,12 @@ export function useShortcuts() {
           return;
         }
         if (klo === 'y') { e.preventDefault(); useHistoryStore.getState().redo(); return; }
+        if (klo === 's') {
+          e.preventDefault();
+          useLayoutStore.getState().saveCurrent();
+          useToastStore.getState().push('Layout saved');
+          return;
+        }
         if (klo === 'c' && !e.shiftKey) { e.preventDefault(); useDrawingStore.getState().copySelected(); return; }
         if (klo === 'v' && !e.shiftKey) { e.preventDefault(); useDrawingStore.getState().paste(); return; }
         if (klo === 'd') { e.preventDefault(); const id = useDrawingStore.getState().selectedId; if (id) useDrawingStore.getState().duplicateDrawing(id); return; }

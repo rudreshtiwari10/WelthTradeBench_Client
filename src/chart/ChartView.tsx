@@ -72,6 +72,7 @@ export function ChartView() {
   const priceSeriesRef = useRef<PriceSeries | null>(null);
   const volSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
+  const savedViewRef = useRef<{ from: number; to: number; totalBars: number } | null>(null);
 
   const panelId = usePanelId();
   const symbol   = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.symbol   ?? DEFAULT_SYMBOL);
@@ -167,6 +168,17 @@ export function ChartView() {
     const chart = chartRef.current;
     if (!chart) return;
 
+    // Preserve viewport if user has manually panned away from the right edge.
+    const currentCandles = candlesRef.current;
+    if (currentCandles.length > 0) {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      if (range && range.to < currentCandles.length - 1) {
+        savedViewRef.current = { from: range.from, to: range.to, totalBars: currentCandles.length };
+      } else {
+        savedViewRef.current = null;
+      }
+    }
+
     // Clear stale candles immediately — the tick handler checks this array.
     candlesRef.current = [];
     setLegend(null);
@@ -207,7 +219,23 @@ export function ChartView() {
         candlesRef.current = candles;
         priceSeries.setData(priceData(candles, chartType) as any);
         volSeriesRef.current!.setData(volumeData(candles) as any);
-        chart.timeScale().fitContent();
+
+        // Restore panned viewport, or default to fitting all content.
+        const saved = savedViewRef.current;
+        if (saved) {
+          savedViewRef.current = null;
+          const rightOffset = saved.totalBars - saved.to;
+          const rangeWidth = saved.to - saved.from;
+          const newTo = candles.length - rightOffset;
+          const newFrom = newTo - rangeWidth;
+          if (newTo > 0 && newFrom < newTo) {
+            chart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
+          } else {
+            chart.timeScale().fitContent();
+          }
+        } else {
+          chart.timeScale().fitContent();
+        }
         const last = candles[candles.length - 1];
         const prev = candles[candles.length - 2];
         if (last) setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });

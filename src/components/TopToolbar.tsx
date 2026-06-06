@@ -13,6 +13,9 @@ import { useHistoryStore } from '../state/historyStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useChartBridge } from '../state/chartBridge';
 import { usePanelsStore, type GridLayout } from '../state/panelsStore';
+import { useAuthStore } from '../state/authStore';
+import { AuthModal } from './AuthModal';
+import { AdminPanel } from './AdminPanel';
 import './TopToolbar.css';
 
 const LAYOUTS: { id: GridLayout; icon: 'fullscreen' | 'splitV' | 'splitH' | 'grid'; label: string }[] = [
@@ -90,6 +93,9 @@ export function TopToolbar() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [mode, setMode] = useState<'upstox' | 'mock'>('mock');
   const [creds, setCreds] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const { user, logout } = useAuthStore();
 
   useEffect(() => {
     authStatus().then((s) => { setMode(s.mode); setCreds(s.credentialsPresent); });
@@ -263,10 +269,34 @@ export function TopToolbar() {
           onClick={toggleChain}
         >⊞ Chain</button>
         <button className="publish-btn" title="Publish">Publish</button>
+
+        <div className="sep" />
+
+        {user ? (
+          <div className="auth-user-widget">
+            {user.is_admin && (
+              <button
+                className="pill-btn admin-btn"
+                onClick={() => setAdminOpen(true)}
+                title="User Management (Admin)"
+              >
+                ★ Admin
+              </button>
+            )}
+            <span className="auth-user-email" title={user.email}>{user.email.split('@')[0]}</span>
+            <button className="pill-btn auth-logout-btn" onClick={logout} title="Logout">Logout</button>
+          </div>
+        ) : (
+          <button className="pill-btn auth-login-btn" onClick={() => setAuthOpen(true)} title="Login / Register">
+            Login
+          </button>
+        )}
       </div>
 
       {searchOpen && <SymbolSearch onClose={closeSearch} initialQuery={searchInitialQuery} />}
       {compareOpen && <SymbolSearch mode="compare" onClose={() => setCompareOpen(false)} />}
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
     </header>
   );
 }
