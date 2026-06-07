@@ -7,6 +7,7 @@ import { CHART_TYPES, INTERVAL_GROUPS, chartTypeIcon } from '../chart/constants'
 import { authStatus } from '../data/dataService';
 import { useUiStore } from '../state/uiStore';
 import { useReplayStore } from '../state/replayStore';
+import { useAutosaveStore } from '../state/autosaveStore';
 import { useAlertStore } from '../state/alertStore';
 import { useToastStore } from '../state/toastStore';
 import { useHistoryStore } from '../state/historyStore';
@@ -34,6 +35,7 @@ export function TopToolbar() {
   const { symbol, interval, chartType, setInterval, setChartType, backtestMode, toggleBacktestMode } = useChartStore();
   const { openIndicators, openSettings, theme, toggleTheme, setChartOnly, chainOpen, toggleChain } = useUiStore();
   const replay = useReplayStore();
+  const autosave = useAutosaveStore();
   const addAlert = useAlertStore((s) => s.add);
   const pushToast = useToastStore((s) => s.push);
   const history = useHistoryStore();
@@ -219,11 +221,55 @@ export function TopToolbar() {
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
 
+        {/* Autosave status badge */}
+        {autosave.status !== 'idle' && (
+          <span className={`autosave-badge ${autosave.status}`}>
+            {autosave.status === 'saving' ? (
+              <span className="autosave-spinner" />
+            ) : (
+              <span className="autosave-check">✓</span>
+            )}
+            <span className="autosave-label">
+              {autosave.status === 'saving'
+                ? 'Saving…'
+                : autosave.lastSaved
+                  ? `Autosaved ${new Date(autosave.lastSaved).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+                  : 'Autosaved'}
+            </span>
+          </span>
+        )}
+
         <Dropdown align="right" width={240} trigger={({ toggle }) => (
           <button className="icon-btn" title="Manage layouts" onClick={toggle}><Icon name="layout" size={18} /></button>
         )}>
           {(close) => (
             <>
+              {/* ── Autosave settings ───────────────────────── */}
+              <div className="menu-group-title">AUTOSAVE</div>
+              <button
+                className="menu-item"
+                onClick={() => autosave.setEnabled(!autosave.enabled)}
+              >
+                <span className="mi-icon" style={{ fontSize: 14 }}>{autosave.enabled ? '●' : '○'}</span>
+                <span className="mi-label">{autosave.enabled ? 'Autosave on' : 'Autosave off'}</span>
+              </button>
+              {autosave.enabled && (
+                <div className="as-interval-row">
+                  <span className="as-interval-label">Every</span>
+                  {[1, 3, 5, 10].map((m) => (
+                    <button
+                      key={m}
+                      className={`as-min-btn ${autosave.intervalMin === m ? 'active' : ''}`}
+                      onClick={() => autosave.setIntervalMin(m)}
+                    >
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="menu-sep" />
+
+              {/* ── Layout actions ──────────────────────────── */}
               <button className="menu-item" onClick={() => { layout.saveCurrent(); pushToast('Layout saved'); close(); }}><span className="mi-icon"><Icon name="layout" size={16} /></span><span className="mi-label">Save</span></button>
               <button className="menu-item" onClick={() => { const n = prompt('Save layout as:', layout.name + ' copy'); if (n) { layout.saveAs(n); pushToast('Layout saved'); } close(); }}><span className="mi-icon"><Icon name="plus" size={16} /></span><span className="mi-label">Save As…</span></button>
               <button className="menu-item" onClick={() => { layout.newLayout(); close(); }}><span className="mi-icon"><Icon name="plus" size={16} /></span><span className="mi-label">New blank layout</span></button>

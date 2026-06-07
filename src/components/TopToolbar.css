@@ -174,3 +174,77 @@
   height: 26px;
 }
 .admin-btn:hover { background: rgba(251,191,36,0.08); }
+
+/* ── Autosave badge ────────────────────────────────────────────────────── */
+.autosave-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  animation: autosave-fadein 0.25s ease;
+}
+.autosave-badge.saving {
+  color: var(--text-muted);
+  background: var(--hover);
+}
+.autosave-badge.saved {
+  color: var(--up);
+  background: rgba(38, 166, 154, 0.1);
+}
+.autosave-check {
+  font-size: 11px;
+  font-weight: 700;
+}
+.autosave-label {
+  font-variant-numeric: tabular-nums;
+}
+@keyframes autosave-fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Tiny spinner for "Saving…" state */
+.autosave-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: autosave-spin 0.7s linear infinite;
+}
+@keyframes autosave-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Autosave interval row inside the layout dropdown ─────────────────── */
+.as-interval-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px 6px;
+}
+.as-interval-label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+.as-min-btn {
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.as-min-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.as-min-btn.active {
+  background: var(--hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}

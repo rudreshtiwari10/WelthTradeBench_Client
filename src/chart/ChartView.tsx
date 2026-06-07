@@ -334,6 +334,14 @@ export function ChartView() {
   const replayPlaying = useReplayStore((st) => st.playing);
   const replaySpeed = useReplayStore((st) => st.speed);
 
+  // Push candle timestamps into replay store when replay activates.
+  useEffect(() => {
+    if (replayActive && candlesRef.current.length > 0) {
+      useReplayStore.getState().setTimestamps(candlesRef.current.map((c) => c.time as number));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayActive]);
+
   // Reveal candles[0..index] while replaying; restore full data on exit.
   useEffect(() => {
     const series = priceSeriesRef.current, vol = volSeriesRef.current;

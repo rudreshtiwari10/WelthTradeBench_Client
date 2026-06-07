@@ -9,6 +9,7 @@ import { OptionsTicket } from './components/OptionsTicket';
 import { OptionsChainPanel } from './components/OptionsChainPanel';
 import { SymbolSearch } from './components/SymbolSearch';
 import { ToastHost } from './components/Toast';
+import { AutosaveWorker } from './components/AutosaveWorker';
 import { PendingApproval } from './components/PendingApproval';
 import { Icon } from './icons/Icon';
 import { useShortcuts } from './hooks/useShortcuts';
@@ -92,6 +93,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <AutosaveWorker />
       <TopToolbar />
       <div className="app-body">
         <LeftToolbar />
