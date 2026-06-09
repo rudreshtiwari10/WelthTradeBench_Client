@@ -13,7 +13,7 @@ import { usePanelsStore } from '../state/panelsStore';
 import { usePanelId } from '../state/PanelContext';
 import { useDrawingStore } from '../state/drawingStore';
 import { useReplayStore } from '../state/replayStore';
-import { fetchHistory, fetchBacktestHistory, liveFeed } from '../data/dataService';
+import { fetchHistory, fetchBacktestHistory, fetchHistoryPage, liveFeed } from '../data/dataService';
 import { getSyncedTime } from '../utils/timeSync';
 import { useToastStore } from '../state/toastStore';
 import { useBrokerStore } from '../state/brokerStore';
@@ -62,6 +62,16 @@ interface LegendData {
 
 const DEFAULT_SYMBOL: SymbolInfo = { symbol: 'NIFTY', name: 'Nifty 50 Index', exchange: 'NSE', kind: 'index' };
 
+// Initial number of candles to load per interval (store-backed symbols serve old
+// candles from MongoDB; more are loaded lazily on scroll-back). Higher intervals
+// have fewer bars per year so we can afford a deeper initial window.
+const INITIAL_COUNT: Record<string, number> = {
+  '1m': 750, '3m': 750, '5m': 750, '15m': 1000, '30m': 1000,
+  '1H': 1000, '2H': 1000, '4H': 1000, '1D': 2000, '1W': 1500, '1M': 1500,
+};
+const PAGE_COUNT = 750;                 // candles fetched per lazy-load page
+const LAZY_LOAD_THRESHOLD = 10;         // trigger when fewer than N bars remain left of view
+
 const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtVol = (n: number) =>
   n >= 1e7 ? (n / 1e7).toFixed(2) + 'Cr' : n >= 1e5 ? (n / 1e5).toFixed(2) + 'L' : n.toLocaleString('en-IN');
@@ -73,6 +83,8 @@ export function ChartView() {
   const volSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const savedViewRef = useRef<{ from: number; to: number; totalBars: number } | null>(null);
+  const loadingOlderRef = useRef(false);    // a lazy back-page fetch is in flight
+  const noMoreHistoryRef = useRef(false);    // store returned an empty older page
 
   const panelId = usePanelId();
   const symbol   = usePanelsStore((s) => s.panels.find((p) => p.id === panelId)?.symbol   ?? DEFAULT_SYMBOL);
@@ -200,6 +212,49 @@ export function ChartView() {
     if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(0);
     useChartStore.getState().bumpData();
 
+    // Reset lazy scroll-back state for the new symbol/interval.
+    loadingOlderRef.current = false;
+    noMoreHistoryRef.current = false;
+
+    // ── Lazy scroll-back: load older candles when the user pans to the left edge.
+    // Store-backed symbols (major indices) serve older bars from MongoDB; other
+    // symbols return an empty page (no server pagination) and simply stop.
+    const loadOlder = async () => {
+      if (loadingOlderRef.current || noMoreHistoryRef.current) return;
+      if (backtestMode || symbol.instrumentKey?.startsWith('MOCK:')) return;
+      const cur = candlesRef.current;
+      if (cur.length === 0) return;
+      loadingOlderRef.current = true;
+      try {
+        const oldest = cur[0].time as number;
+        const page = await fetchHistoryPage(symbol.symbol, interval, oldest, PAGE_COUNT, symbol.instrumentKey);
+        // Bail if symbol/interval/chartType changed while the fetch was in flight.
+        if (priceSeriesRef.current !== priceSeries) return;
+        const older = page.filter((c) => (c.time as number) < (candlesRef.current[0]?.time as number));
+        if (older.length === 0) { noMoreHistoryRef.current = true; return; }
+        const before = chart.timeScale().getVisibleLogicalRange();
+        const merged = older.concat(candlesRef.current);
+        candlesRef.current = merged;
+        priceSeries.setData(priceData(merged, chartTypeRef.current) as any);
+        volSeriesRef.current!.setData(volumeData(merged) as any);
+        // Keep the viewport anchored: shift the logical range by the prepended count.
+        if (before) {
+          chart.timeScale().setVisibleLogicalRange({ from: before.from + older.length, to: before.to + older.length });
+        }
+        if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(merged.length);
+        useChartStore.getState().bumpData();
+      } catch {
+        /* transient fetch error — allow a retry on the next pan */
+      } finally {
+        loadingOlderRef.current = false;
+      }
+    };
+
+    const onRangeChange = (range: { from: number; to: number } | null) => {
+      if (range && range.from < LAZY_LOAD_THRESHOLD) void loadOlder();
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+
     // Fetch history for all instruments so the chart is never blank on load.
     // Live instruments will continue receiving ticks on top of this data.
     const ac = new AbortController();
@@ -207,7 +262,7 @@ export function ChartView() {
       try {
         const res = backtestMode
           ? await fetchBacktestHistory(symbol.symbol, interval, ac.signal)
-          : await fetchHistory(symbol.symbol, interval, 300, symbol.instrumentKey, ac.signal);
+          : await fetchHistory(symbol.symbol, interval, INITIAL_COUNT[interval] ?? 750, symbol.instrumentKey, ac.signal);
         if (ac.signal.aborted || priceSeriesRef.current !== priceSeries) return;
         // Surface any advisory from Yahoo Finance (e.g. MCX USD price warning).
         if (backtestMode && res.source_warning) pushToast(res.source_warning);
@@ -247,7 +302,10 @@ export function ChartView() {
         console.error('[ChartView] history fetch failed:', e);
       }
     })();
-    return () => { ac.abort(); };
+    return () => {
+      ac.abort();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartType, symbol.symbol, interval, backtestMode]);
 

@@ -27,12 +27,32 @@ export async function fetchHistory(
   count = 600,
   instrumentKey?: string,
   signal?: AbortSignal,
+  beforeTs?: number,
 ): Promise<HistoryResponse> {
   let url = `${API_BASE}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
   if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
+  if (beforeTs != null) url += `&before_ts=${Math.floor(beforeTs)}`;
   const r = await fetch(url, signal ? { signal } : undefined);
   if (!r.ok) throw new Error(`history ${r.status}`);
   return r.json();
+}
+
+/**
+ * Fetch an OLDER page of candles for lazy scroll-back — every returned bar has
+ * time < beforeTs.  Returns [] when there is no more history to load.
+ * Only meaningful for store-backed symbols (major indices); other symbols have
+ * no server-side pagination and will return an empty page.
+ */
+export async function fetchHistoryPage(
+  symbol: string,
+  interval: Interval,
+  beforeTs: number,
+  count = 750,
+  instrumentKey?: string,
+  signal?: AbortSignal,
+): Promise<Candle[]> {
+  const res = await fetchHistory(symbol, interval, count, instrumentKey, signal, beforeTs);
+  return res.candles ?? [];
 }
 
 /**
