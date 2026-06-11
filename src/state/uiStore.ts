@@ -15,8 +15,8 @@ interface UiState {
   chartOnly: boolean;
   toggleChartOnly: () => void;
   setChartOnly: (v: boolean) => void;
-  trade: { open: boolean; symbol: string; side: 'buy' | 'sell'; spot: number };
-  openTrade: (symbol: string, side: 'buy' | 'sell', spot: number) => void;
+  trade: { open: boolean; symbol: string; side: 'buy' | 'sell'; spot: number; kind: string; instrumentKey?: string; exchange?: string };
+  openTrade: (symbol: string, side: 'buy' | 'sell', spot: number, kind?: string, instrumentKey?: string, exchange?: string) => void;
   closeTrade: () => void;
   chainOpen: boolean;
   toggleChain: () => void;
@@ -44,8 +44,9 @@ export const useUiStore = create<UiState>((set) => ({
   chartOnly: false,
   toggleChartOnly: () => set((s) => ({ chartOnly: !s.chartOnly })),
   setChartOnly: (chartOnly) => set({ chartOnly }),
-  trade: { open: false, symbol: '', side: 'buy', spot: 0 },
-  openTrade: (symbol, side, spot) => set({ trade: { open: true, symbol, side, spot } }),
+  trade: { open: false, symbol: '', side: 'buy', spot: 0, kind: 'index', instrumentKey: undefined, exchange: undefined },
+  openTrade: (symbol, side, spot, kind = 'index', instrumentKey, exchange) =>
+    set({ trade: { open: true, symbol, side, spot, kind, instrumentKey, exchange } }),
   closeTrade: () => set((s) => ({ trade: { ...s.trade, open: false } })),
   chainOpen: false,
   toggleChain: () => set((s) => ({ chainOpen: !s.chainOpen })),

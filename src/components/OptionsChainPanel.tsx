@@ -132,7 +132,13 @@ export function OptionsChainPanel() {
   const brokerSandbox    = useBrokerStore((s) => s.sandbox);
   const brokerPlaceOrder = useBrokerStore((s) => s.placeOrder);
 
-  const isLive = brokerSource === 'upstox';
+  const activeBroker  = useBrokerStore((s) => s.activeBroker);
+  const isLive = brokerSource !== 'paper';
+  const isKite = activeBroker === 'kite' && isLive;
+
+  // ── Order type + limit price (visible in pending confirmation for live mode) ──
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [limitPrice, setLimitPrice] = useState(0);
 
   // ── Panel state ──────────────────────────────────────────────────────
   const [underlying, setUnderlying] = useState('NIFTY');
@@ -305,11 +311,27 @@ export function OptionsChainPanel() {
   // Clear pending order on context change
   useEffect(() => { setPendingOrder(null); }, [underlying, expiryIdx, depth]);
 
+  // Auto-switch order type: Kite defaults to LIMIT, Upstox to MARKET
+  useEffect(() => {
+    setOrderType(activeBroker === 'kite' ? 'LIMIT' : 'MARKET');
+  }, [activeBroker]);
+
+  // Pre-fill limit price from selected row's LTP when a pending order is staged
+  useEffect(() => {
+    if (!pendingOrder) return;
+    const ltp = pendingOrder.optType === 'CE'
+      ? pendingOrder.row.callLtp
+      : pendingOrder.row.putLtp;
+    if (ltp > 0) setLimitPrice(ltp);
+  }, [pendingOrder]);
+
   // ── Place trade ───────────────────────────────────────────────────────
   const placeTrade = async (row: DerivChainRow, optType: 'CE' | 'PE') => {
     const key = optType === 'CE' ? row.callKey : row.putKey;
     const ltp = optType === 'CE' ? row.callLtp : row.putLtp;
-    if (!key) { pushToast('No instrument key — cannot place order'); return; }
+    // Kite resolves tradingsymbol server-side via underlying+expiry+strike+optType;
+    // Upstox requires an explicit instrument key.
+    if (!isKite && !key) { pushToast('No instrument key — cannot place order'); return; }
     if (!ltp) { pushToast('Price unavailable — try again'); return; }
 
     const exp = expiries[expiryIdx];
@@ -318,28 +340,47 @@ export function OptionsChainPanel() {
     const indexSpot = effectiveSpot;
     if (!indexSpot) { pushToast('Waiting for spot price — try again'); return; }
 
-    const ls         = lotSize(underlying);
-    const qty        = lots * ls;
-    const contract   = buildContractSymbol(underlying, exp.value, row.strike, optType);
-    const expiryMs   = new Date(exp.value + 'T00:00:00Z').getTime();
-    const placingKey = `${row.strike}${optType}`;
+    const ls            = lotSize(underlying);
+    const qty           = lots * ls;
+    const contract      = buildContractSymbol(underlying, exp.value, row.strike, optType);
+    const expiryMs      = new Date(exp.value + 'T00:00:00Z').getTime();
+    const placingKey    = `${row.strike}${optType}`;
+    const effectivePrice = orderType === 'LIMIT' ? limitPrice : 0;
 
     setPlacing(placingKey);
     try {
       let positionId: string;
 
       if (isLive) {
-        const result = await brokerPlaceOrder({
-          instrument_key: key,
-          qty,
-          transaction_type: side.toUpperCase() as 'BUY' | 'SELL',
-          order_type: 'MARKET',
-          price: 0,
-          product: 'D',
-        });
+        const result = await brokerPlaceOrder(
+          isKite
+            ? {
+                qty,
+                transaction_type: side.toUpperCase() as 'BUY' | 'SELL',
+                order_type: orderType,
+                price: effectivePrice,
+                product: 'D',
+                segment: 'option',
+                underlying,
+                expiry: exp.value,
+                strike: row.strike,
+                option_type: optType,
+              }
+            : {
+                instrument_key: key!,
+                qty,
+                transaction_type: side.toUpperCase() as 'BUY' | 'SELL',
+                order_type: orderType,
+                price: effectivePrice,
+                product: 'D',
+              }
+        );
         positionId = result.order_id ?? `live_${Date.now()}`;
         const label = brokerSandbox ? '[SANDBOX] ' : '';
-        pushToast(`${label}${side.toUpperCase()} ${lots}L ${contract} @ ₹${fmt2(ltp)}`);
+        const priceLabel = orderType === 'LIMIT'
+          ? `LIMIT ₹${fmt2(effectivePrice)}`
+          : `@ ₹${fmt2(ltp)}`;
+        pushToast(`${label}${side.toUpperCase()} ${lots}L ${contract} ${priceLabel}`);
       } else {
         positionId = addPaperPos({
           symbol: contract,
@@ -368,7 +409,7 @@ export function OptionsChainPanel() {
         strike:             row.strike,
         optType,
         expiryDate:         expiryMs,
-        instrumentKey:      key,
+        instrumentKey:      key ?? undefined,
       });
 
       if (currentSym !== underlying) {
@@ -555,35 +596,60 @@ export function OptionsChainPanel() {
           {/* ── Pending Order Confirmation ── */}
           {pendingOrder && exp && (
             <div className="ocp-pending">
-              <div className="ocp-pending-info">
-                <span className={`ocp-pending-type ${pendingOrder.optType === 'CE' ? 'ce' : 'pe'}`}>
-                  {pendingOrder.optType}
-                </span>
-                <span className="ocp-pending-contract">
-                  {buildContractSymbol(underlying, exp.value, pendingOrder.row.strike, pendingOrder.optType)}
-                </span>
-                <span className="ocp-pending-ltp">
-                  ₹{fmt2(pendingOrder.optType === 'CE' ? pendingOrder.row.callLtp : pendingOrder.row.putLtp)}
-                </span>
-                <span className={`ocp-pending-side ${side}`}>{side.toUpperCase()}</span>
-                <span className="ocp-pending-lots">{lots}L</span>
+              <div className="ocp-pending-row1">
+                <div className="ocp-pending-info">
+                  <span className={`ocp-pending-type ${pendingOrder.optType === 'CE' ? 'ce' : 'pe'}`}>
+                    {pendingOrder.optType}
+                  </span>
+                  <span className="ocp-pending-contract">
+                    {buildContractSymbol(underlying, exp.value, pendingOrder.row.strike, pendingOrder.optType)}
+                  </span>
+                  <span className="ocp-pending-ltp">
+                    ₹{fmt2(pendingOrder.optType === 'CE' ? pendingOrder.row.callLtp : pendingOrder.row.putLtp)}
+                  </span>
+                  <span className={`ocp-pending-side ${side}`}>{side.toUpperCase()}</span>
+                  <span className="ocp-pending-lots">{lots}L</span>
+                </div>
+                <div className="ocp-pending-btns">
+                  <button className="ocp-pending-cancel" onClick={() => setPendingOrder(null)}>✕</button>
+                  <button
+                    className={`ocp-pending-place ${side}`}
+                    disabled={placing === `${pendingOrder.row.strike}${pendingOrder.optType}`}
+                    onClick={async () => {
+                      const snap = pendingOrder;
+                      try { await placeTrade(snap.row, snap.optType); }
+                      finally { setPendingOrder(null); }
+                    }}
+                  >
+                    {placing === `${pendingOrder.row.strike}${pendingOrder.optType}`
+                      ? 'Placing…'
+                      : `Place ${side.toUpperCase()}`}
+                  </button>
+                </div>
               </div>
-              <div className="ocp-pending-btns">
-                <button className="ocp-pending-cancel" onClick={() => setPendingOrder(null)}>✕</button>
-                <button
-                  className={`ocp-pending-place ${side}`}
-                  disabled={placing === `${pendingOrder.row.strike}${pendingOrder.optType}`}
-                  onClick={async () => {
-                    const snap = pendingOrder;
-                    try { await placeTrade(snap.row, snap.optType); }
-                    finally { setPendingOrder(null); }
-                  }}
-                >
-                  {placing === `${pendingOrder.row.strike}${pendingOrder.optType}`
-                    ? 'Placing…'
-                    : `Place ${side.toUpperCase()}`}
-                </button>
-              </div>
+              {isLive && (
+                <div className="ocp-order-type">
+                  <span className="ocp-ot-label">Order:</span>
+                  <button
+                    className={`ocp-ot-btn ${orderType === 'MARKET' ? 'on' : ''}`}
+                    onClick={() => setOrderType('MARKET')}
+                  >MKT</button>
+                  <button
+                    className={`ocp-ot-btn ${orderType === 'LIMIT' ? 'on' : ''}`}
+                    onClick={() => setOrderType('LIMIT')}
+                  >LMT</button>
+                  {orderType === 'LIMIT' && (
+                    <input
+                      className="ocp-lmt-price"
+                      type="number"
+                      step="0.05"
+                      min="0.05"
+                      value={limitPrice}
+                      onChange={(e) => setLimitPrice(parseFloat(e.target.value) || 0)}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -592,7 +658,9 @@ export function OptionsChainPanel() {
             {isLive
               ? brokerSandbox
                 ? '⬡ Sandbox — simulated fills'
-                : '● Live orders — real Upstox execution'
+                : isKite
+                  ? '● Live orders — real Kite execution'
+                  : '● Live orders — real Upstox execution'
               : '◻ Paper trading — no real funds'}
             <button className="ocp-refresh" onClick={fetchChain} title="Refresh chain">↺</button>
           </div>

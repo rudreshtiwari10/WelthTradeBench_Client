@@ -98,7 +98,7 @@ function useCollapsed(storageKey: string, def = false) {
 
 // ─── Tiny "Live / Sandbox / Paper" badge ─────────────────────────────────
 function ModeBadge({ source, sandbox }: { source: string; sandbox: boolean }) {
-  if (source !== 'upstox') return <span className="cw-mode-badge paper">PAPER</span>;
+  if (source === 'paper') return <span className="cw-mode-badge paper">PAPER</span>;
   return <span className={`cw-mode-badge ${sandbox ? 'sandbox' : 'live'}`}>{sandbox ? 'SANDBOX' : 'LIVE'}</span>;
 }
 
@@ -116,7 +116,7 @@ function AccountWidget({ source, sandbox }: { source: string; sandbox: boolean }
   // ── figures ──────────────────────────────────────────────────────────
   let available = 0, used = 0, total = 0;
 
-  if (source === 'upstox' && funds?.equity) {
+  if (source !== 'paper' && funds?.equity) {
     available = funds.equity.available_margin ?? 0;
     used = funds.equity.used_margin ?? 0;
     total = funds.equity.payin ?? (available + used);
@@ -145,7 +145,7 @@ function AccountWidget({ source, sandbox }: { source: string; sandbox: boolean }
       {!collapsed && (
         <div className="cw-body">
           <div className="cw-row">
-            <span>{source === 'upstox' ? 'Total balance' : 'Demo balance'}</span>
+            <span>{source !== 'paper' ? 'Total balance' : 'Demo balance'}</span>
             <span className="cw-v">₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="cw-row">
@@ -154,7 +154,7 @@ function AccountWidget({ source, sandbox }: { source: string; sandbox: boolean }
               {used > 0 ? `-₹${used.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '₹0'}
             </span>
           </div>
-          {source === 'upstox' && funds?.equity?.span != null && (
+          {source !== 'paper' && funds?.equity?.span != null && (
             <div className="cw-row">
               <span>SPAN margin</span>
               <span className="cw-v">₹{(funds.equity.span ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
@@ -167,7 +167,7 @@ function AccountWidget({ source, sandbox }: { source: string; sandbox: boolean }
               {!avUp ? '-' : ''}₹{Math.abs(available).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </span>
           </div>
-          {source === 'upstox' && funds?.equity?.pnl != null && (
+          {source !== 'paper' && funds?.equity?.pnl != null && (
             <div className="cw-row">
               <span>Day P&L</span>
               <span className={`cw-v ${(funds.equity.pnl ?? 0) >= 0 ? 'cw-up' : 'cw-down'}`}>
@@ -175,7 +175,7 @@ function AccountWidget({ source, sandbox }: { source: string; sandbox: boolean }
               </span>
             </div>
           )}
-          {source !== 'upstox' && (
+          {source === 'paper' && (
             <div className="cw-row">
               <span>Paper positions</span>
               <span className="cw-v">{paperPositions.length}</span>
@@ -227,9 +227,9 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
   const lastUpdated = useBrokerStore((s) => s.lastUpdated);
   const { total: paperTotal, wins: paperWins, losses: paperLosses } = usePaperPnl(paperPositions);
 
-  // Live: sum unrealised_profit from Upstox positions
+  // Live: sum unrealised_profit from broker positions
   let totalPnl = 0; let wins = 0; let losses = 0;
-  if (source === 'upstox') {
+  if (source !== 'paper') {
     for (const p of brokerPositions) {
       const pnl = p.unrealised_profit ?? 0;
       totalPnl += pnl;
@@ -239,7 +239,7 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
     totalPnl = paperTotal; wins = paperWins; losses = paperLosses;
   }
 
-  const posCount = source === 'upstox' ? brokerPositions.length : paperPositions.length;
+  const posCount = source !== 'paper' ? brokerPositions.length : paperPositions.length;
   const pnlUp = totalPnl >= 0;
 
   // "Updated Xs ago" label
@@ -285,7 +285,7 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
                 <span className="cw-up">▲ {wins} winning</span>
                 <span className="cw-down">▼ {losses} losing</span>
               </div>
-              {source === 'upstox' && agoLabel && (
+              {source !== 'paper' && agoLabel && (
                 <div className="cw-row" style={{ marginTop: 2 }}>
                   <span>Updated</span>
                   <span className="cw-v" style={{ fontSize: 10 }}>{agoLabel}</span>
@@ -421,7 +421,7 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
       .forEach((l) => removeLines(l.positionId));
   }, [clearPaper, removeLines]);
 
-  const isLive = source === 'upstox';
+  const isLive = source !== 'paper';
   // Always count both broker + paper so the badge reflects reality.
   const posCount = (isLive ? brokerPositions.length : 0) + paperPositions.length;
   const ordCount = isLive ? brokerOrders.length : 0;

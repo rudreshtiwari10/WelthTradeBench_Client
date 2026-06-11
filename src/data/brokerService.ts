@@ -7,13 +7,27 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export type Broker = 'upstox' | 'kite';
+
+// Append ?broker= only for non-default (kite) so existing upstox calls are unchanged.
+function brokerQuery(broker?: Broker): string {
+  return broker && broker !== 'upstox' ? `?broker=${broker}` : '';
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────
+
+export interface BrokerAuthInfo {
+  authenticated: boolean;
+  credentialsPresent: boolean;
+  sandbox: boolean;
+}
 
 export interface BrokerStatus {
   mode: 'upstox' | 'mock';
   authenticated: boolean;
   sandbox: boolean;
   credentialsPresent: boolean;
+  brokers: Record<Broker, BrokerAuthInfo>;
 }
 
 export interface BrokerEquity {
@@ -28,7 +42,7 @@ export interface BrokerEquity {
 }
 
 export interface BrokerFunds {
-  source: 'upstox' | 'paper';
+  source: 'upstox' | 'kite' | 'paper';
   sandbox: boolean;
   equity?: BrokerEquity;
   commodity?: Record<string, number>;
@@ -90,17 +104,26 @@ export interface OptionChainRow {
 }
 
 export interface PlaceOrderParams {
-  instrument_key: string;
+  instrument_key?: string;     // Upstox addressing
   qty: number;
   transaction_type: 'BUY' | 'SELL';
   order_type?: 'MARKET' | 'LIMIT' | 'SL' | 'SL-M';
   price?: number;
-  product?: 'D' | 'I';        // D=NRML, I=MIS
+  product?: 'D' | 'I';        // D=NRML/CNC, I=MIS
   trigger_price?: number;
+  broker?: Broker;             // "upstox" | "kite"
+  segment?: 'option' | 'future' | 'equity';
+  // Kite contract addressing (ignored by the Upstox path):
+  tradingsymbol?: string;
+  exchange?: string;
+  underlying?: string;
+  expiry?: string;             // YYYY-MM-DD
+  strike?: number;
+  option_type?: 'CE' | 'PE';
 }
 
 export interface PlaceOrderResult {
-  source: 'upstox' | 'paper';
+  source: 'upstox' | 'kite' | 'paper';
   sandbox: boolean;
   order_id?: string;
 }
@@ -113,20 +136,20 @@ export async function fetchBrokerStatus(): Promise<BrokerStatus> {
   return r.json();
 }
 
-export async function fetchBrokerFunds(): Promise<BrokerFunds> {
-  const r = await fetch(`${API_BASE}/api/broker/funds`);
+export async function fetchBrokerFunds(broker?: Broker): Promise<BrokerFunds> {
+  const r = await fetch(`${API_BASE}/api/broker/funds${brokerQuery(broker)}`);
   if (!r.ok) throw new Error(`broker/funds ${r.status}`);
   return r.json();
 }
 
-export async function fetchBrokerPositions(): Promise<{ source: string; sandbox: boolean; positions: BrokerPosition[] }> {
-  const r = await fetch(`${API_BASE}/api/broker/positions`);
+export async function fetchBrokerPositions(broker?: Broker): Promise<{ source: string; sandbox: boolean; positions: BrokerPosition[] }> {
+  const r = await fetch(`${API_BASE}/api/broker/positions${brokerQuery(broker)}`);
   if (!r.ok) throw new Error(`broker/positions ${r.status}`);
   return r.json();
 }
 
-export async function fetchBrokerOrders(): Promise<{ source: string; sandbox: boolean; orders: BrokerOrder[] }> {
-  const r = await fetch(`${API_BASE}/api/broker/orders`);
+export async function fetchBrokerOrders(broker?: Broker): Promise<{ source: string; sandbox: boolean; orders: BrokerOrder[] }> {
+  const r = await fetch(`${API_BASE}/api/broker/orders${brokerQuery(broker)}`);
   if (!r.ok) throw new Error(`broker/orders ${r.status}`);
   return r.json();
 }
@@ -143,6 +166,15 @@ export async function placeBrokerOrder(params: PlaceOrderParams): Promise<PlaceO
       price: params.price ?? 0,
       product: params.product ?? 'D',
       trigger_price: params.trigger_price ?? 0,
+      broker: params.broker ?? 'upstox',
+      segment: params.segment ?? 'option',
+      // Kite contract addressing (ignored by the Upstox path):
+      tradingsymbol: params.tradingsymbol,
+      exchange: params.exchange,
+      underlying: params.underlying,
+      expiry: params.expiry,
+      strike: params.strike,
+      option_type: params.option_type,
     }),
   });
   if (!r.ok) {
@@ -152,8 +184,11 @@ export async function placeBrokerOrder(params: PlaceOrderParams): Promise<PlaceO
   return r.json();
 }
 
-export async function cancelBrokerOrder(orderId: string): Promise<{ source: string }> {
-  const r = await fetch(`${API_BASE}/api/broker/order/${encodeURIComponent(orderId)}`, { method: 'DELETE' });
+export async function cancelBrokerOrder(orderId: string, broker?: Broker): Promise<{ source: string }> {
+  const r = await fetch(
+    `${API_BASE}/api/broker/order/${encodeURIComponent(orderId)}${brokerQuery(broker)}`,
+    { method: 'DELETE' },
+  );
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(err.detail ?? `cancel ${r.status}`);

@@ -92,6 +92,51 @@
   border-color: var(--up);
 }
 
+/* ── Account selector (Upstox / Zerodha) + connect button ── */
+.ot-account-toggle { padding-top: 10px; }
+.ot-account-connect {
+  margin: 8px 14px 0;
+  height: 34px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border: 1px solid var(--accent, #2f6df0);
+  border-radius: var(--radius);
+  color: #fff;
+  background: var(--accent, #2f6df0);
+  cursor: pointer;
+}
+.ot-account-connect:disabled { opacity: 0.6; cursor: default; }
+
 /* ── Live order place button variant ── */
 .ot-place-live.buy  { background: linear-gradient(90deg, var(--up) 0%, #1a8a7a 100%); }
 .ot-place-live.sell { background: linear-gradient(90deg, var(--down) 0%, #c62828 100%); }
+
+/* ── Market protection row ── */
+.ot-protect-row { align-items: center; }
+.ot-protect-label { display: flex; flex-direction: column; gap: 1px; }
+.ot-protect-hint { font-size: 10px; color: var(--text-dim); }
+.ot-protect-toggle {
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  background: none;
+  cursor: pointer;
+  min-width: 46px;
+}
+.ot-protect-toggle.on {
+  background: rgba(255,193,7,0.15);
+  color: #ffc107;
+  border-color: #ffc107;
+}
+.ot-protect-price {
+  font-size: 11px;
+  color: #ffc107;
+  background: rgba(255,193,7,0.08);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  margin-top: 2px;
+  text-align: center;
+}

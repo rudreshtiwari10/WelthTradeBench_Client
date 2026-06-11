@@ -622,7 +622,7 @@ export function ChartView() {
         />
 
         <IndicatorLegend />
-        <TradeButtons symbol={symbol.symbol} />
+        <TradeButtons symbol={symbol.symbol} kind={symbol.kind} instrumentKey={symbol.instrumentKey} exchange={symbol.exchange} />
         {ready && <IndicatorsRenderer />}
         {ready && <CompareRenderer />}
         {ready && <AlertsRenderer />}
