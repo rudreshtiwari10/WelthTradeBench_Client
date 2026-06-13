@@ -50,6 +50,11 @@ export interface DStyle {
   fillOpacity: number;
   fontSize: number;
   textColor: string;
+  // TradingView-matching fields
+  opacity?: number;          // overall drawing opacity 0-1 (default 1)
+  extendLeft?: boolean;      // extend trendline/ray to left canvas edge
+  extendRight?: boolean;     // extend trendline/ray to right canvas edge
+  showPriceLabel?: boolean;  // show price tag on right axis
 }
 
 export interface Drawing {
@@ -59,8 +64,9 @@ export interface Drawing {
   style: DStyle;
   text?: string;
   locked?: boolean;
-  hidden?: boolean;   // per-drawing visibility toggle
-  name?: string;      // user-assigned label (replaces type label in ObjectTree)
+  hidden?: boolean;            // per-drawing visibility toggle
+  name?: string;               // user-assigned label (replaces type label in ObjectTree)
+  timeframeVisibility?: string[]; // if set, only visible on listed timeframes
 }
 
 // How many anchor points each tool needs before it's complete.
@@ -100,8 +106,8 @@ export const DEFAULT_STYLE: DStyle = {
   textColor: '#d1d4dc',
 };
 
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618];
+export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.618];
 export const FIB_COLORS: Record<number, string> = {
   0: '#787b86', 0.236: '#ef5350', 0.382: '#ff9800', 0.5: '#4caf50',
-  0.618: '#26a69a', 0.786: '#089981', 1: '#787b86', 1.618: '#2962ff', 2.618: '#9c27b0',
+  0.618: '#26a69a', 0.786: '#089981', 1: '#787b86', 1.272: '#9c27b0', 1.618: '#2962ff', 2.618: '#9c27b0',
 };

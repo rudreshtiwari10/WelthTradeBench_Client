@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChartApi } from '../chart/ChartContext';
 import { useDrawingStore, type Tool } from '../state/drawingStore';
-import { renderDrawing, hitTest, handleHit, type Pt } from './geometry';
+import { useUiStore } from '../state/uiStore';
+import { useChartStore } from '../state/chartStore';
+import { renderDrawing, renderHoverHighlight, hitTest, handleHit, type Pt } from './geometry';
 import { POINT_COUNT, EW_LABELS, type DPoint, type Drawing, type DrawingType } from './types';
 import { TOOL_GROUPS, groupTools } from './tools';
+import { DrawingSettingsModal } from './DrawingSettingsModal';
 import './DrawingLayer.css';
 
 const EW_TYPES = new Set<DrawingType>(['ew_impulse','ew_correction','ew_triangle','ew_double','ew_triple']);
@@ -37,11 +40,14 @@ export function DrawingLayer() {
   // Interaction state in refs — no re-render churn.
   const draft = useRef<{ type: DrawingType; points: DPoint[] } | null>(null);
   const cursorPt = useRef<DPoint | null>(null);
-  const drag = useRef<{ id: string; handle: number; start: Pt; orig: DPoint[] } | null>(null);
+  const drag = useRef<{ id: string; handle: number; start: Pt; orig: DPoint[]; cloned?: boolean } | null>(null);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const shiftRef = useRef(false);
+  const altRef = useRef(false);
   // Canvas-relative pixel position of the mouse — used to draw the TV-style crosshair
   const mousePx = useRef<Pt | null>(null);
+  // ID of drawing currently under the mouse (for hover highlight)
+  const hoveredId = useRef<string | null>(null);
 
   // Keep latest store values for event handlers without re-binding listeners.
   const s = useRef(store); s.current = store;
@@ -111,10 +117,17 @@ export function DrawingLayer() {
 
         if (!s.current.hidden) {
           const multiSet = new Set(s.current.multiSelected);
+          const currentInterval = useChartStore.getState().interval;
           for (const d of s.current.drawings) {
             if (d.hidden) continue;                    // ← per-drawing hide
+            // Timeframe visibility: if set, skip if current interval not included
+            if (d.timeframeVisibility?.length && !d.timeframeVisibility.includes(currentInterval)) continue;
             const pts = d.points.map(project).filter(Boolean) as Pt[];
             if (pts.length < d.points.length) continue;
+            // Hover highlight — subtle glow before the actual drawing
+            if (d.id === hoveredId.current && d.id !== s.current.selectedId) {
+              renderHoverHighlight(ctx, d, pts, w, h);
+            }
             renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price));
             const isSel = d.id === s.current.selectedId || multiSet.has(d.id);
             if (isSel) drawHandles(ctx, pts, d.locked);
@@ -193,6 +206,7 @@ export function DrawingLayer() {
     const parent = c.parentElement!;
     const onParentMove = (e: MouseEvent) => {
       shiftRef.current = e.shiftKey;
+      altRef.current = e.altKey;
       const tool = s.current.activeTool;
       const r = c.getBoundingClientRect();
       // Always track for crosshair rendering
@@ -204,15 +218,21 @@ export function DrawingLayer() {
         return;
       }
       const m = { x: e.clientX - r.left, y: e.clientY - r.top };
-      const hit = s.current.drawings.some((d) => {
-        if (d.hidden) return false;
+      let hitId: string | null = null;
+      for (let i = s.current.drawings.length - 1; i >= 0; i--) {
+        const d = s.current.drawings[i];
+        if (d.hidden) continue;
         const pts = d.points.map(project).filter(Boolean) as Pt[];
-        return pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h);
-      });
-      setCapture(hit);
-      parent.style.cursor = hit ? (tool === 'eraser' ? 'pointer' : 'move') : '';
+        if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h)) {
+          hitId = d.id;
+          break;
+        }
+      }
+      hoveredId.current = hitId;
+      setCapture(hitId !== null);
+      parent.style.cursor = hitId ? (tool === 'eraser' ? 'pointer' : 'move') : '';
     };
-    const onParentLeave = () => { mousePx.current = null; parent.style.cursor = ''; };
+    const onParentLeave = () => { mousePx.current = null; hoveredId.current = null; parent.style.cursor = ''; };
     parent.addEventListener('mousemove', onParentMove);
     parent.addEventListener('mouseleave', onParentLeave);
     return () => {
@@ -286,6 +306,7 @@ export function DrawingLayer() {
       const pts = sel.points.map(project).filter(Boolean) as Pt[];
       const hi = handleHit(pts, m);
       if (hi >= 0) {
+        s.current.pushHistory();
         drag.current = { id: sel.id, handle: hi, start: m, orig: sel.points.map((p) => ({ ...p })) };
         return;
       }
@@ -299,8 +320,8 @@ export function DrawingLayer() {
       if (pts.length === d.points.length && hitTest(d, pts, m, w, h)) {
         if (tool === 'eraser') { s.current.removeDrawing(d.id); return; }
 
-        if (e.shiftKey) {
-          // Shift+click: multi-select
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          // Shift/Ctrl+click: multi-select
           s.current.addToMultiSelect(d.id);
           s.current.select(d.id);
           return;
@@ -309,6 +330,7 @@ export function DrawingLayer() {
         s.current.select(d.id);
         s.current.clearMultiSelect();
         if (!s.current.locked && !d.locked) {
+          s.current.pushHistory();
           drag.current = { id: d.id, handle: -1, start: m, orig: d.points.map((p) => ({ ...p })) };
         }
         return;
@@ -354,6 +376,15 @@ export function DrawingLayer() {
       return;
     }
     if (drag.current) {
+      // Alt+drag: clone the drawing on first move and drag the clone
+      if (e.altKey && !drag.current.cloned && drag.current.handle < 0) {
+        const orig = s.current.drawings.find((x) => x.id === drag.current!.id);
+        if (orig) {
+          const clone = { ...orig, id: newId(), points: orig.points.map((p) => ({ ...p })), locked: false };
+          s.current.addDrawing(clone);
+          drag.current = { ...drag.current, id: clone.id, cloned: true };
+        }
+      }
       const d = s.current.drawings.find((x) => x.id === drag.current!.id); if (!d) return;
       const r = canvasRef.current!.getBoundingClientRect();
       const m = { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -420,31 +451,75 @@ export function DrawingLayer() {
 
 
   // ── keyboard shortcuts in layer context ──────────────────────────────
+  const openDrawingSettings = useUiStore((ui) => ui.openDrawingSettings);
   useEffect(() => {
+    // TradingView tool-activation key → DrawingType mapping
+    const TOOL_KEYS: Record<string, Tool> = {
+      l: 'trendline', h: 'hline', v: 'vline', t: 'text',
+      r: 'rect', f: 'fib', m: 'measure', b: 'brush', p: 'pchannel',
+    };
     const onKey = (e: KeyboardEvent) => {
       shiftRef.current = e.shiftKey;
+      altRef.current = e.altKey;
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
+
+      // Escape
       if (e.key === 'Escape') {
         if (textInputRef.current) { setTextInput(null); s.current.setTool('cursor'); return; }
         draft.current = null; cursorPt.current = null;
         s.current.setTool('cursor'); s.current.select(null); s.current.clearMultiSelect();
         setCtxMenu(null);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace')) {
+        return;
+      }
+
+      // Delete / Backspace
+      if (e.key === 'Delete' || e.key === 'Backspace') {
         if (s.current.multiSelected.length > 0) { s.current.removeMultiSelected(); return; }
         if (s.current.selectedId) { s.current.removeDrawing(s.current.selectedId); }
+        return;
       }
+
+      // Ctrl / Meta combos
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); s.current.undo(); return; }
+        if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); s.current.redo(); return; }
+        if (e.key === 'y')                { e.preventDefault(); s.current.redo(); return; }
+        if (e.key === 'c')                { s.current.copySelected(); return; }
+        if (e.key === 'v')                { s.current.paste(); return; }
+        if (e.key === 'd') { e.preventDefault(); if (s.current.selectedId) s.current.duplicateDrawing(s.current.selectedId); return; }
+        return;
+      }
+
+      // Tab / Shift+Tab: cycle through drawings
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const drawings = s.current.drawings.filter((d) => !d.hidden);
+        if (!drawings.length) return;
+        const idx = drawings.findIndex((d) => d.id === s.current.selectedId);
+        const next = e.shiftKey
+          ? (idx <= 0 ? drawings.length - 1 : idx - 1)
+          : (idx >= drawings.length - 1 ? 0 : idx + 1);
+        s.current.select(drawings[next].id);
+        return;
+      }
+
+      // Tool activation shortcuts (single letters, no modifier)
+      const tool = TOOL_KEYS[e.key.toLowerCase()];
+      if (tool) { s.current.setTool(tool); return; }
     };
-    const onKeyUp = (e: KeyboardEvent) => { shiftRef.current = e.shiftKey; };
+    const onKeyUp = (e: KeyboardEvent) => { shiftRef.current = e.shiftKey; altRef.current = e.altKey; };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, []);
+  }, [openDrawingSettings]);
 
   const hasSelection = !!store.selectedId || store.multiSelected.length > 0;
+  const drawingSettingsId = useUiStore((st) => st.drawingSettingsId);
+  const closeDrawingSettings = useUiStore((st) => st.closeDrawingSettings);
 
   return (
     <>
@@ -468,13 +543,31 @@ export function DrawingLayer() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onContextMenu={onContextMenu}
-        onDoubleClick={() => {
-          if (draft.current?.type === 'polyline' && draft.current.points.length >= 2) finishDraft();
+        onDoubleClick={(e) => {
+          if (draft.current?.type === 'polyline' && draft.current.points.length >= 2) { finishDraft(); return; }
+          // Open settings modal for double-clicked drawing
+          if (!isDrawTool(s.current.activeTool)) {
+            const r = canvasRef.current!.getBoundingClientRect();
+            const m = { x: e.clientX - r.left, y: e.clientY - r.top };
+            for (let i = s.current.drawings.length - 1; i >= 0; i--) {
+              const d = s.current.drawings[i];
+              if (d.hidden) continue;
+              const pts = d.points.map(project).filter(Boolean) as Pt[];
+              if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h)) {
+                s.current.select(d.id);
+                openDrawingSettings(d.id);
+                return;
+              }
+            }
+          }
         }}
       />
 
       {/* ── Context menu ── */}
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
+
+      {/* ── Drawing settings modal (double-click or Settings button) ── */}
+      {drawingSettingsId && <DrawingSettingsModal drawingId={drawingSettingsId} onClose={closeDrawingSettings} />}
 
       {/* ── Inline text / callout editor ── */}
       {textInput && (

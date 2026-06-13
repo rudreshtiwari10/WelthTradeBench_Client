@@ -71,6 +71,9 @@ interface DrawingState {
   favorites: FavDef[];
   templates: StyleTemplate[];
   clipboard: Drawing | null;
+  // Undo / redo stacks
+  history: Drawing[][];
+  future: Drawing[][];
 
   setTool: (t: Tool, pendingText?: string | null) => void;
   consumePendingText: () => string | null;
@@ -84,6 +87,11 @@ interface DrawingState {
   removeDrawing: (id: string) => void;
   removeMultiSelected: () => void;
   clearAll: () => void;
+
+  // Push current drawings onto the undo stack (call before a drag so drag is undoable)
+  pushHistory: () => void;
+  undo: () => void;
+  redo: () => void;
 
   select: (id: string | null) => void;
   addToMultiSelect: (id: string) => void;
@@ -117,6 +125,12 @@ let idSeq = 1;
 const newId = () => `d${Date.now()}_${idSeq++}`;
 const tmplId = () => `tmpl_${Date.now()}`;
 
+// Deep-clone drawings for history (avoids aliasing issues)
+const cloneDrawings = (arr: Drawing[]): Drawing[] =>
+  arr.map((d) => ({ ...d, points: d.points.map((p) => ({ ...p })), style: { ...d.style } }));
+
+const MAX_HISTORY = 50;
+
 export const useDrawingStore = create<DrawingState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor',
@@ -131,6 +145,8 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
   favorites: loadFavs(),
   templates: loadTmpls(),
   clipboard: null,
+  history: [],
+  future: [],
 
   setTool: (t, pendingText = null) =>
     set({ activeTool: t, pendingText, selectedId: t === 'cursor' ? get().selectedId : null }),
@@ -141,8 +157,13 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
   toggleHidden: () => set((s) => ({ hidden: !s.hidden })),
 
   addDrawing: (d) =>
-    set((s) => { const arr = [...s.drawings, d]; persist(arr); return { drawings: arr, selectedId: d.id }; }),
+    set((s) => {
+      const arr = [...s.drawings, d];
+      persist(arr);
+      return { drawings: arr, selectedId: d.id, history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)], future: [] };
+    }),
 
+  // updateDrawing is called during drag — does NOT push history (caller uses pushHistory first)
   updateDrawing: (id, patch) =>
     set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, ...patch } : d)); persist(arr); return { drawings: arr }; }),
 
@@ -150,7 +171,7 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
     set((s) => {
       const arr = s.drawings.filter((d) => d.id !== id);
       persist(arr);
-      return { drawings: arr, selectedId: s.selectedId === id ? null : s.selectedId };
+      return { drawings: arr, selectedId: s.selectedId === id ? null : s.selectedId, history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)], future: [] };
     }),
 
   removeMultiSelected: () =>
@@ -158,10 +179,42 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
       const ids = new Set([...s.multiSelected, ...(s.selectedId ? [s.selectedId] : [])]);
       const arr = s.drawings.filter((d) => !ids.has(d.id));
       persist(arr);
-      return { drawings: arr, selectedId: null, multiSelected: [] };
+      return { drawings: arr, selectedId: null, multiSelected: [], history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)], future: [] };
     }),
 
-  clearAll: () => set(() => { persist([]); return { drawings: [], selectedId: null, multiSelected: [] }; }),
+  clearAll: () => set((s) => {
+    persist([]);
+    return { drawings: [], selectedId: null, multiSelected: [], history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)], future: [] };
+  }),
+
+  pushHistory: () => set((s) => ({
+    history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)],
+    future: [],
+  })),
+
+  undo: () => set((s) => {
+    if (!s.history.length) return {};
+    const prev = s.history[s.history.length - 1];
+    persist(prev);
+    return {
+      drawings: prev,
+      history: s.history.slice(0, -1),
+      future: [cloneDrawings(s.drawings), ...s.future.slice(0, MAX_HISTORY - 1)],
+      selectedId: null, multiSelected: [],
+    };
+  }),
+
+  redo: () => set((s) => {
+    if (!s.future.length) return {};
+    const next = s.future[0];
+    persist(next);
+    return {
+      drawings: next,
+      history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)],
+      future: s.future.slice(1),
+      selectedId: null, multiSelected: [],
+    };
+  }),
 
   select: (id) => set({ selectedId: id }),
   addToMultiSelect: (id) =>
@@ -169,7 +222,11 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
   clearMultiSelect: () => set({ multiSelected: [] }),
 
   setStyle: (id, patch) =>
-    set((s) => { const arr = s.drawings.map((d) => (d.id === id ? { ...d, style: { ...d.style, ...patch } } : d)); persist(arr); return { drawings: arr }; }),
+    set((s) => {
+      const arr = s.drawings.map((d) => (d.id === id ? { ...d, style: { ...d.style, ...patch } } : d));
+      persist(arr);
+      return { drawings: arr, history: [...s.history.slice(-MAX_HISTORY + 1), cloneDrawings(s.drawings)], future: [] };
+    }),
   setDefaultStyle: (patch) => set((s) => ({ defaultStyle: { ...s.defaultStyle, ...patch } })),
 
   toggleHideDrawing: (id) =>

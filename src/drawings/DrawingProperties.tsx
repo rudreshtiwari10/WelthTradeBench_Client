@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon } from '../icons/Icon';
 import { useDrawingStore } from '../state/drawingStore';
+import { useUiStore } from '../state/uiStore';
 import './DrawingProperties.css';
 
 const COLORS = ['#2962ff', '#ef5350', '#26a69a', '#ff9800', '#ab47bc', '#ffeb3b', '#ffffff', '#787b86'];
@@ -15,8 +16,9 @@ export function DrawingToolbarState() {
     drawings, selectedId, multiSelected, setStyle, removeDrawing, select,
     updateDrawing, duplicateDrawing, bringToFront, sendToBack,
     templates, saveTemplate, applyTemplate, deleteTemplate,
-    copySelected, removeMultiSelected,
+    copySelected, removeMultiSelected, undo, redo, history, future,
   } = useDrawingStore();
+  const { openDrawingSettings } = useUiStore();
 
   const [tmplOpen, setTmplOpen] = useState(false);
   const [savingName, setSavingName] = useState('');
@@ -123,6 +125,12 @@ export function DrawingToolbarState() {
 
       <div className="dp-sep" />
 
+      {/* Undo / Redo */}
+      <button className="dp-btn" title="Undo (Ctrl+Z)" onClick={undo} disabled={!history.length} style={{ opacity: history.length ? 1 : 0.4 }}>↩</button>
+      <button className="dp-btn" title="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!future.length} style={{ opacity: future.length ? 1 : 0.4 }}>↪</button>
+
+      <div className="dp-sep" />
+
       {/* Copy / duplicate */}
       <button className="dp-btn" title="Copy drawing (Ctrl+C)" onClick={copySelected}><Icon name="compare" size={16} /></button>
       <button className="dp-btn" title="Duplicate (Ctrl+D)" onClick={() => duplicateDrawing(d.id)}><Icon name="plus" size={16} /></button>
@@ -147,6 +155,10 @@ export function DrawingToolbarState() {
       )}
       <button className="dp-btn danger" onClick={() => removeDrawing(d.id)} title="Delete (Del)">
         <Icon name="trash" size={16} />
+      </button>
+      {/* Settings (opens full properties modal on double-click equivalent) */}
+      <button className="dp-btn" title="Settings (double-click drawing)" onClick={() => openDrawingSettings(d.id)}>
+        <Icon name="settings" size={16} />
       </button>
       <button className="dp-btn" onClick={() => select(null)} title="Deselect (Esc)">
         <Icon name="close" size={16} />

@@ -48,6 +48,7 @@ export function renderDrawing(
 ) {
   const s = d.style;
   ctx.save();
+  if (s.opacity != null && s.opacity < 1) ctx.globalAlpha = s.opacity;
   ctx.strokeStyle = s.color;
   ctx.fillStyle = s.fill;
   ctx.lineWidth = s.width;
@@ -55,13 +56,21 @@ export function renderDrawing(
   const line = (a: Pt, b: Pt) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
 
   switch (d.type) {
-    case 'trendline': if (pts[1]) line(pts[0], pts[1]); break;
+    case 'trendline': {
+      if (!pts[1]) break;
+      let p1 = pts[0], p2 = pts[1];
+      if (s.extendLeft) [p1] = extend(pts[1], pts[0], w, h, false);
+      if (s.extendRight) [, p2] = extend(pts[0], pts[1], w, h, false);
+      line(p1, p2);
+      if (s.showPriceLabel !== false) priceTag(ctx, w, p2.y, prices[1] ?? prices[0], s);
+      break;
+    }
     case 'arrow':
       if (pts[1]) { line(pts[0], pts[1]); ctx.setLineDash([]); arrowHead(ctx, pts[0], pts[1], 12 + s.width * 2); }
       break;
-    case 'ray': if (pts[1]) { const [a, b] = extend(pts[0], pts[1], w, h, false); line(a, b); } break;
+    case 'ray': if (pts[1]) { const [a, b] = extend(pts[0], pts[1], w, h, false); line(a, b); if (s.showPriceLabel !== false) priceTag(ctx, w, b.y, prices[0], s); } break;
     case 'extended': if (pts[1]) { const [a, b] = extend(pts[0], pts[1], w, h, true); line(a, b); } break;
-    case 'hline': line({ x: 0, y: pts[0].y }, { x: w, y: pts[0].y }); priceTag(ctx, w, pts[0].y, prices[0], s); break;
+    case 'hline': line({ x: 0, y: pts[0].y }, { x: w, y: pts[0].y }); if (s.showPriceLabel !== false) priceTag(ctx, w, pts[0].y, prices[0], s); break;
     case 'hray': line(pts[0], { x: w, y: pts[0].y }); break;
     case 'vline': line({ x: pts[0].x, y: 0 }, { x: pts[0].x, y: h }); break;
     case 'rect':
@@ -85,7 +94,7 @@ export function renderDrawing(
         ctx.globalAlpha = s.fillOpacity; ctx.fill(); ctx.globalAlpha = 1; ctx.stroke();
       }
       break;
-    case 'fib': if (pts[1]) renderFib(ctx, pts[0], pts[1], prices, s); break;
+    case 'fib': if (pts[1]) renderFib(ctx, pts[0], pts[1], prices, s, w); break;
     case 'fibext': if (pts[2]) renderFibExt(ctx, pts, prices, w); break;
     case 'triangle':
       if (pts[2]) {
@@ -221,16 +230,15 @@ function priceTag(ctx: CanvasRenderingContext2D, w: number, y: number, price: nu
   ctx.restore();
 }
 
-function renderFib(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: number[], s: DStyle) {
+function renderFib(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: number[], s: DStyle, w: number) {
   const [pa, pb] = prices;
-  const xL = Math.min(a.x, b.x), xR = Math.max(a.x, b.x);
+  // Lines extend to full canvas width (matching TradingView behavior)
+  const xL = 0, xR = w;
+  // Anchor marker range for the fill bands
+  const fillXL = Math.min(a.x, b.x), fillXR = Math.max(a.x, b.x);
   ctx.save(); ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
   let prevY: number | null = null;
   for (const lv of FIB_LEVELS) {
-    // Levels 0–1: interpolate between the two anchor points as normal.
-    // Levels > 1 ("extensions"): project in the OPPOSITE direction from the
-    // draw (behind the starting point a), so drawing up puts them below the
-    // low and drawing down puts them above the high — matching TV behaviour.
     let y: number, price: number;
     if (lv <= 1) {
       y     = a.y  + (b.y  - a.y)  * lv;
@@ -240,15 +248,14 @@ function renderFib(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: number[]
       price = pa   - (pb   - pa)   * (lv - 1);
     }
     const c = FIB_COLORS[lv] || s.color;
-    // Fill coloured bands only within the 0–1 retracement zone.
     if (prevY != null && lv <= 1) {
       ctx.globalAlpha = 0.06; ctx.fillStyle = c;
-      ctx.fillRect(xL, Math.min(prevY, y), xR - xL, Math.abs(y - prevY));
+      ctx.fillRect(fillXL, Math.min(prevY, y), fillXR - fillXL, Math.abs(y - prevY));
       ctx.globalAlpha = 1;
     }
     ctx.strokeStyle = c; ctx.setLineDash([]); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y); ctx.stroke();
-    ctx.fillStyle = c; ctx.fillText(`${lv}  ${fmt(price)}`, xL + 4, y - 7);
+    ctx.fillStyle = c; ctx.fillText(`${lv}  ${fmt(price)}`, fillXL + 4, y - 7);
     if (lv <= 1) prevY = y;
   }
   ctx.restore();
@@ -470,6 +477,32 @@ function renderPriceLabel(ctx: CanvasRenderingContext2D, p: Pt, price: number, s
   ctx.fill();
   ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - 7, p.y); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.fillText(label, p.x + 7, p.y);
+  ctx.restore();
+}
+
+// ── hover highlight: glow ring around the hovered drawing ───────────────
+export function renderHoverHighlight(
+  ctx: CanvasRenderingContext2D,
+  d: Drawing,
+  pts: Pt[],
+  w: number,
+  h: number,
+) {
+  ctx.save();
+  ctx.strokeStyle = d.style.color;
+  ctx.lineWidth = d.style.width + 4;
+  ctx.globalAlpha = 0.22;
+  ctx.setLineDash([]);
+  switch (d.type) {
+    case 'trendline': { if (!pts[1]) break; let p1 = pts[0], p2 = pts[1]; if (d.style.extendLeft) [p1] = extend(pts[1], pts[0], w, h, false); if (d.style.extendRight) [, p2] = extend(pts[0], pts[1], w, h, false); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); break; }
+    case 'arrow': case 'ray': case 'extended': case 'hline': case 'hray':
+      if (pts[1] || d.type === 'hline' || d.type === 'hray') { ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1]?.x ?? w, pts[0].y); ctx.stroke(); } break;
+    case 'vline': ctx.beginPath(); ctx.moveTo(pts[0].x, 0); ctx.lineTo(pts[0].x, h); ctx.stroke(); break;
+    case 'rect': case 'measure':
+      if (pts[1]) { const x = Math.min(pts[0].x, pts[1].x), y = Math.min(pts[0].y, pts[1].y); ctx.strokeRect(x, y, Math.abs(pts[1].x - pts[0].x), Math.abs(pts[1].y - pts[0].y)); } break;
+    default:
+      if (pts.length >= 2) { ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y); ctx.stroke(); }
+  }
   ctx.restore();
 }
 

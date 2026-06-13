@@ -166,3 +166,100 @@
   color: var(--text-muted, #888);
   font-size: 13px;
 }
+
+/* Panel tabs */
+.admin-panel-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border, #2c2f36);
+  flex-shrink: 0;
+}
+.admin-panel-tab {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.admin-panel-tab:hover { color: var(--text, #ccc); }
+.admin-panel-tab.active { color: var(--accent, #2962ff); border-bottom-color: var(--accent, #2962ff); }
+
+/* Data management */
+.admin-data-hint {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  padding: 4px 20px 10px;
+  line-height: 1.5;
+}
+.admin-data-actions {
+  padding: 0 20px 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Seed results */
+.admin-seed-results {
+  margin: 0 20px 14px;
+  background: var(--bg, #0d1117);
+  border: 1px solid var(--border, #2c2f36);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.admin-seed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.admin-seed-sym {
+  font-weight: 700;
+  color: var(--text, #ccc);
+  width: 96px;
+  flex-shrink: 0;
+}
+.admin-seed-ok   { color: #34d399; }
+.admin-seed-skip { color: #fbbf24; }
+.admin-seed-err  { color: #f87171; }
+
+/* Symbol status grid */
+.admin-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 4px 20px 16px;
+}
+.admin-status-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2c2f36);
+  background: var(--bg, #0d1117);
+}
+.admin-status-card.ok     { border-color: rgba(52, 211, 153, 0.25); }
+.admin-status-card.missing { border-color: rgba(248, 113, 113, 0.25); }
+.admin-status-sym {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text, #ccc);
+  margin-bottom: 4px;
+}
+.admin-status-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.admin-status-dates {
+  color: var(--text-dim, #555);
+  font-size: 10px;
+}

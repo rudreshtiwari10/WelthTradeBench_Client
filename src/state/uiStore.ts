@@ -28,6 +28,10 @@ interface UiState {
   closeSearch: () => void;
   theme: Theme;
   toggleTheme: () => void;
+  // Drawing settings modal
+  drawingSettingsId: string | null;
+  openDrawingSettings: (id: string) => void;
+  closeDrawingSettings: () => void;
 }
 
 const initialTheme: Theme = (localStorage.getItem('theme') as Theme) || 'dark';
@@ -61,4 +65,7 @@ export const useUiStore = create<UiState>((set) => ({
     try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
     return { theme };
   }),
+  drawingSettingsId: null,
+  openDrawingSettings: (id) => set({ drawingSettingsId: id }),
+  closeDrawingSettings: () => set({ drawingSettingsId: null }),
 }));
