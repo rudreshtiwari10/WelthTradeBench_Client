@@ -3,10 +3,9 @@
   display: inline-flex;
 }
 
+/* Menu is rendered via portal (position:fixed via inline style).
+   Only visual / scroll properties live here. */
 .dropdown-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  z-index: 50;
   min-width: 180px;
   max-height: 70vh;
   overflow-y: auto;
@@ -15,12 +14,6 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-}
-.dropdown-menu.left {
-  left: 0;
-}
-.dropdown-menu.right {
-  right: 0;
 }
 
 .menu-item {

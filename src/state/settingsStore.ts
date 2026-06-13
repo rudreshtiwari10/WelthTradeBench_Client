@@ -28,8 +28,35 @@ const DEFAULTS: ChartSettings = {
   background: '',  // '' = follow theme
 };
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+const LS_KEY = 'welthwest:chartSettings';
+
+const loadSettings = (): Partial<ChartSettings> => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
+};
+
+const saveSettings = (s: ChartSettings) => {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch { /* */ }
+};
+
+const saved = loadSettings();
+
+export const useSettingsStore = create<SettingsState>((zustandSet, zustandGet) => ({
   ...DEFAULTS,
-  set: (patch) => set(patch),
-  reset: () => set(DEFAULTS),
+  ...saved,
+
+  set: (patch) => {
+    zustandSet(patch);
+    const s = zustandGet();
+    saveSettings({
+      upColor: s.upColor, downColor: s.downColor,
+      wickVisible: s.wickVisible, borderVisible: s.borderVisible,
+      showVolume: s.showVolume, gridVisible: s.gridVisible,
+      crosshairColor: s.crosshairColor, background: s.background,
+    });
+  },
+
+  reset: () => {
+    zustandSet(DEFAULTS);
+    saveSettings(DEFAULTS);
+  },
 }));

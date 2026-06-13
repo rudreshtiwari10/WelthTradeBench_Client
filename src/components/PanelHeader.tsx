@@ -26,21 +26,29 @@ export function PanelHeader() {
   const updatePanel = usePanelsStore((s) => s.updatePanel);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const isActive = () => usePanelsStore.getState().activeId === panelId;
+  // Activate this panel (if not already) so TopToolbar stays in sync.
+  const activate = () => {
+    if (usePanelsStore.getState().activeId !== panelId) {
+      usePanelsStore.getState().setActive(panelId);
+    }
+  };
 
   const handleInterval = (iv: Interval) => {
+    activate();
     updatePanel(panelId, { interval: iv });
-    if (isActive()) useChartStore.getState().setInterval(iv);
+    useChartStore.getState().setInterval(iv);
   };
 
   const handleChartType = (ct: ChartType) => {
+    activate();
     updatePanel(panelId, { chartType: ct });
-    if (isActive()) useChartStore.getState().setChartType(ct);
+    useChartStore.getState().setChartType(ct);
   };
 
   const handleSymbolSelect = (sym: SymbolInfo) => {
+    activate();
     updatePanel(panelId, { symbol: sym });
-    if (isActive()) useChartStore.getState().setSymbol(sym);
+    useChartStore.getState().setSymbol(sym);
     setSearchOpen(false);
   };
 

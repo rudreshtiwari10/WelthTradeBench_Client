@@ -3,6 +3,7 @@ import type { ChartType, Interval, SymbolInfo } from '../data/types';
 import { useChartStore } from './chartStore';
 import { useIndicatorStore, type IndicatorInstance } from './indicatorStore';
 import { usePanelsStore, type GridLayout, type Panel } from './panelsStore';
+import { useSettingsStore, type ChartSettings } from './settingsStore';
 import { apiFetch, isAuthenticated } from '../api/client';
 
 export interface Layout {
@@ -16,6 +17,8 @@ export interface Layout {
   // Full multi-panel state
   gridLayout?: GridLayout;
   panels?: Panel[];
+  // Chart appearance settings (candle colors, grid, etc.)
+  settings?: ChartSettings;
 }
 
 interface LayoutState {
@@ -49,6 +52,7 @@ const persistLocal = (s: Pick<LayoutState, 'layouts' | 'currentId' | 'name'>) =>
 const capture = (name: string, id: string): Layout => {
   const cs = useChartStore.getState();
   const ps = usePanelsStore.getState();
+  const ss = useSettingsStore.getState();
   return {
     id,
     name,
@@ -60,6 +64,17 @@ const capture = (name: string, id: string): Layout => {
     // Full multi-panel state
     gridLayout: ps.layout,
     panels: ps.panels,
+    // Chart appearance settings
+    settings: {
+      upColor: ss.upColor,
+      downColor: ss.downColor,
+      wickVisible: ss.wickVisible,
+      borderVisible: ss.borderVisible,
+      showVolume: ss.showVolume,
+      gridVisible: ss.gridVisible,
+      crosshairColor: ss.crosshairColor,
+      background: ss.background,
+    },
   };
 };
 
@@ -127,6 +142,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       useChartStore.getState().setChartType(l.chartType);
     }
 
+    // Restore chart appearance settings if the layout has them
+    if (l.settings) {
+      useSettingsStore.getState().set(l.settings);
+    }
+
     useIndicatorStore.getState().setInstances(l.indicators);
     persistLocal({ layouts: s.layouts, currentId: id, name: l.name });
     return { currentId: id, name: l.name };
@@ -168,6 +188,10 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       const { currentId, name } = get();
       persistLocal({ layouts, currentId, name });
       set({ layouts });
+      // Restore the active layout (panels, settings, indicators) after login
+      if (currentId && layouts.some((l) => l.id === currentId)) {
+        get().load(currentId);
+      }
     } catch (e) {
       console.error('[layoutStore] fetchLayouts failed:', e);
     }

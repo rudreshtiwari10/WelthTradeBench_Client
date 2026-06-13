@@ -243,6 +243,10 @@ export function ChartView() {
         }
         if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(merged.length);
         useChartStore.getState().bumpData();
+        // Keep replay timeline in sync when older candles are prepended.
+        if (useReplayStore.getState().active) {
+          useReplayStore.getState().setTimestamps(merged.map((c) => c.time as number));
+        }
       } catch {
         /* transient fetch error — allow a retry on the next pan */
       } finally {
@@ -296,6 +300,10 @@ export function ChartView() {
         if (last) setLegend({ open: last.open, high: last.high, low: last.low, close: last.close, prevClose: prev?.close ?? last.open, volume: last.volume });
         if (usePanelsStore.getState().activeId === panelId) useChartStore.getState().setBarCount(candles.length);
         useChartStore.getState().bumpData();
+        // If replay is already active (started before data finished loading), sync timestamps now.
+        if (useReplayStore.getState().active) {
+          useReplayStore.getState().setTimestamps(candles.map((c) => c.time as number));
+        }
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return;
         if (backtestMode) pushToast(`Backtest data unavailable for ${symbol.symbol} ${interval} — try a different timeframe`);
