@@ -344,7 +344,7 @@ export function ChartView() {
       } as any);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, ready, chartType]);
+  }, [settings, ready, chartType, backtestMode]);
 
   // Register chart actions for the top toolbar (snapshot, reset).
   useEffect(() => {
