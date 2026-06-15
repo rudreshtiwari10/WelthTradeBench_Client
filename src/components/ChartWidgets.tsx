@@ -17,6 +17,7 @@ import type { Position } from '../state/positionsStore';
 import { useBrokerStore } from '../state/brokerStore';
 import { usePriceLinesStore } from '../state/priceLinesStore';
 import { useSlTpPopupStore } from '../state/slTpPopupStore';
+import { useToastStore } from '../state/toastStore';
 import type { BrokerPosition } from '../data/brokerService';
 import { liveFeed } from '../data/dataService';
 import { optionPremium } from '../data/options';
@@ -227,10 +228,13 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
   const lastUpdated = useBrokerStore((s) => s.lastUpdated);
   const { total: paperTotal, wins: paperWins, losses: paperLosses } = usePaperPnl(paperPositions);
 
+  // Kite's net positions include flat (qty=0) rows — filter those out
+  const openBrokerPositions = brokerPositions.filter((p) => p.quantity !== 0);
+
   // Live: sum unrealised_profit from broker positions
   let totalPnl = 0; let wins = 0; let losses = 0;
   if (source !== 'paper') {
-    for (const p of brokerPositions) {
+    for (const p of openBrokerPositions) {
       const pnl = p.unrealised_profit ?? 0;
       totalPnl += pnl;
       if (pnl >= 0) wins++; else losses++;
@@ -239,7 +243,7 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
     totalPnl = paperTotal; wins = paperWins; losses = paperLosses;
   }
 
-  const posCount = source !== 'paper' ? brokerPositions.length : paperPositions.length;
+  const posCount = source !== 'paper' ? openBrokerPositions.length : paperPositions.length;
   const pnlUp = totalPnl >= 0;
 
   // "Updated Xs ago" label
@@ -263,7 +267,7 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
         <span className="cw-title">Live P&amp;L</span>
         {posCount > 0 && (
           <span className={`cw-badge ${pnlUp ? 'cw-up' : 'cw-down'}`}>
-            {pnlUp ? '+' : '−'}₹{Math.abs(totalPnl).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            {pnlUp ? '+' : '−'}₹{Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         )}
         <ModeBadge source={source} sandbox={sandbox} />
@@ -278,7 +282,7 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
               <div className="cw-pnl-total">
                 <span>Unrealised P&L</span>
                 <span className={`cw-pnl-big ${pnlUp ? 'cw-up' : 'cw-down'}`}>
-                  {pnlUp ? '+' : '−'}₹{Math.abs(totalPnl).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  {pnlUp ? '+' : '−'}₹{Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="cw-row cw-pnl-meta">
@@ -303,11 +307,258 @@ function PnlWidget({ source, sandbox }: { source: string; sandbox: boolean }) {
 // POSITIONS TERMINAL — LIVE BROKER ROW
 // ─────────────────────────────────────────────────────────────────────────
 
-function BrokerPosRow({ p, onCancel }: { p: BrokerPosition; onCancel: ((sym: string) => void) | null }) {
-  const qty = p.quantity;
-  const side = qty >= 0 ? 'buy' : 'sell';
-  const pnl = p.unrealised_profit ?? 0;
+// Month abbreviation → 0-indexed month number for expiry parsing
+const _MON: Record<string, number> = {
+  JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5,
+  JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11,
+};
+
+type ParsedKiteSymbol =
+  | { kind: 'option'; underlying: string; strike: number; optType: 'CE' | 'PE'; expiryMs?: number }
+  | { kind: 'future'; underlying: string; expiryMs?: number }
+  | { kind: 'equity'; tradingsymbol: string };
+
+/** Last Thursday of a given year/month (0-indexed). */
+function _lastThursday(year: number, mon: number): number {
+  const lastDay = new Date(Date.UTC(year, mon + 1, 0));
+  const back = (lastDay.getUTCDay() + 3) % 7;
+  return new Date(Date.UTC(year, mon, lastDay.getUTCDate() - back)).getTime();
+}
+
+/**
+ * Parse any Kite tradingsymbol — option, future, or equity.
+ * Never returns null; always classifies by kind.
+ *
+ * Handles:
+ *   Monthly option/future  NIFTY24JUN24000CE / NIFTY24JUNFUT
+ *   Weekly option (Jan-Sep) NIFTY2461324000CE  (YY + M(1-digit) + DD + strike + CE/PE)
+ *   Weekly option (Oct-Dec) NIFTY241013240000CE (YY + MM(2-digit) + DD + strike + CE/PE)
+ *   Weekly future           NIFTY24613FUT
+ *   Equity                  RELIANCE / NIFTYBEES
+ */
+function parseKiteSymbol(sym: string): ParsedKiteSymbol {
+  const s = sym.trim().toUpperCase();
+
+  // ─── Options (CE / PE suffix) ──────────────────────────────────────────
+  if (s.endsWith('CE') || s.endsWith('PE')) {
+    const optType = s.slice(-2) as 'CE' | 'PE';
+    const body = s.slice(0, -2);
+    const ulyM = body.match(/^([A-Z]+)/);
+    if (ulyM) {
+      const underlying = ulyM[1];
+      const rest = body.slice(underlying.length);
+
+      // Monthly: YYMMM + strike digits (e.g. "24JUN24000")
+      const moM = rest.match(/^(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d+)$/);
+      if (moM) {
+        const year = 2000 + parseInt(moM[1], 10);
+        const mon  = _MON[moM[2]];
+        const strike = parseInt(moM[3], 10);
+        const expiryMs = mon !== undefined ? _lastThursday(year, mon) : undefined;
+        return { kind: 'option', underlying, strike, optType, expiryMs };
+      }
+
+      // Weekly: rest is all digits — date (5 or 6 digits) + strike (remaining)
+      if (/^\d+$/.test(rest) && rest.length >= 7) {
+        let strike: number | undefined;
+        let expiryMs: number | undefined;
+
+        // 6-digit date first (months 10-12): YY + MM(2) + DD(2) + strike
+        if (rest.length >= 8) {
+          const mo = parseInt(rest.slice(2, 4), 10);
+          const dy = parseInt(rest.slice(4, 6), 10);
+          if (mo >= 10 && mo <= 12 && dy >= 1 && dy <= 31) {
+            const s2 = parseInt(rest.slice(6), 10);
+            if (s2 > 0) {
+              strike = s2;
+              const d = new Date(Date.UTC(2000 + parseInt(rest.slice(0, 2), 10), mo - 1, dy));
+              if (!isNaN(d.getTime())) expiryMs = d.getTime();
+            }
+          }
+        }
+        // 5-digit date (months 1-9): YY + M(1) + DD(2) + strike
+        if (strike === undefined) {
+          const mo = parseInt(rest.slice(2, 3), 10);
+          const dy = parseInt(rest.slice(3, 5), 10);
+          if (mo >= 1 && mo <= 9 && dy >= 1 && dy <= 31) {
+            const s2 = parseInt(rest.slice(5), 10);
+            if (s2 > 0) {
+              strike = s2;
+              const d = new Date(Date.UTC(2000 + parseInt(rest.slice(0, 2), 10), mo - 1, dy));
+              if (!isNaN(d.getTime())) expiryMs = d.getTime();
+            }
+          }
+        }
+        if (strike && strike > 0) {
+          return { kind: 'option', underlying, strike, optType, expiryMs };
+        }
+      }
+    }
+  }
+
+  // ─── Futures (FUT suffix) ──────────────────────────────────────────────
+  if (s.endsWith('FUT')) {
+    const body = s.slice(0, -3);
+    const ulyM = body.match(/^([A-Z]+)/);
+    const underlying = ulyM ? ulyM[1] : body;
+    const rest = ulyM ? body.slice(underlying.length) : '';
+    let expiryMs: number | undefined;
+
+    // Monthly future: YYMMM (e.g. "24JUN")
+    const moM = rest.match(/^(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/);
+    if (moM) {
+      const year = 2000 + parseInt(moM[1], 10);
+      const mon  = _MON[moM[2]];
+      if (mon !== undefined) expiryMs = _lastThursday(year, mon);
+    }
+    // Weekly future 6-digit date (months 10-12)
+    if (!expiryMs && /^\d{6}$/.test(rest)) {
+      const mo = parseInt(rest.slice(2, 4), 10);
+      const dy = parseInt(rest.slice(4, 6), 10);
+      if (mo >= 10 && mo <= 12 && dy >= 1 && dy <= 31) {
+        const d = new Date(Date.UTC(2000 + parseInt(rest.slice(0, 2), 10), mo - 1, dy));
+        if (!isNaN(d.getTime())) expiryMs = d.getTime();
+      }
+    }
+    // Weekly future 5-digit date (months 1-9)
+    if (!expiryMs && /^\d{5}$/.test(rest)) {
+      const mo = parseInt(rest.slice(2, 3), 10);
+      const dy = parseInt(rest.slice(3, 5), 10);
+      if (mo >= 1 && mo <= 9 && dy >= 1 && dy <= 31) {
+        const d = new Date(Date.UTC(2000 + parseInt(rest.slice(0, 2), 10), mo - 1, dy));
+        if (!isNaN(d.getTime())) expiryMs = d.getTime();
+      }
+    }
+    return { kind: 'future', underlying, expiryMs };
+  }
+
+  // ─── Equity (everything else) ──────────────────────────────────────────
+  return { kind: 'equity', tradingsymbol: sym };
+}
+
+function BrokerPosRow({ p }: { p: BrokerPosition }) {
+  const qty   = p.quantity;
+  const side: 'buy' | 'sell' = qty >= 0 ? 'buy' : 'sell';
+  const pnl   = p.unrealised_profit ?? 0;
   const pnlUp = pnl >= 0;
+
+  const allLines   = usePriceLinesStore((s) => s.lines);
+  const addLines   = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const parsed     = parseKiteSymbol(p.trading_symbol);  // never null
+
+  // Derive kind-specific fields once (avoids repeated type-narrowing casts)
+  const isOption  = parsed.kind === 'option';
+  const isFuture  = parsed.kind === 'future';
+  const isEquity  = parsed.kind === 'equity';
+  const posUnderlying = isEquity ? p.trading_symbol : parsed.underlying;
+  const posExpiry     = parsed.kind !== 'equity' ? parsed.expiryMs   : undefined;
+  const posStrike     = parsed.kind === 'option'  ? parsed.strike     : undefined;
+  const posOptType    = parsed.kind === 'option'  ? parsed.optType    : undefined;
+
+  // Find existing chart entry line for any position type
+  const entryLine = allLines.find(l =>
+    l.type === 'entry' && (
+      l.symbol === p.trading_symbol ||
+      (isEquity
+        ? l.underlying.toUpperCase() === p.trading_symbol.toUpperCase() && !l.optType && !l.strike
+        : l.underlying.toUpperCase() === posUnderlying.toUpperCase() &&
+          (isOption ? l.strike === posStrike && l.optType === posOptType : !l.optType)
+      )
+    )
+  );
+
+  const slLine     = entryLine ? allLines.find(l => l.positionId === entryLine.positionId && l.type === 'sl') : undefined;
+  const tpLine     = entryLine ? allLines.find(l => l.positionId === entryLine.positionId && l.type === 'tp') : undefined;
+  const posId      = entryLine?.positionId;
+  const entryPrice = entryLine?.entryPrice ?? p.average_price ?? 0;
+  const optType    = entryLine?.optType ?? posOptType;
+
+  // Create chart lines on demand for positions not placed through this app
+  const ensureLines = (): string => {
+    if (posId) return posId;
+    const newId = `kite_${p.instrument_token || p.trading_symbol}`;
+    const already = usePriceLinesStore.getState().lines.some(
+      l => l.positionId === newId && l.type === 'entry'
+    );
+    if (!already) {
+      addLines({
+        positionId: newId,
+        symbol: p.trading_symbol,
+        underlying: posUnderlying,   // equity: trading_symbol; options/futures: index name
+        side,
+        qty: Math.abs(qty),
+        price: entryPrice,
+        entryPrice,
+        strike: posStrike,
+        optType: posOptType,
+        expiryDate: posExpiry,
+      });
+    }
+    return newId;
+  };
+
+  // Determine default SL direction for prompt suggestions
+  const profitOnUp = optType
+    ? (optType === 'CE' && side === 'buy') || (optType === 'PE' && side === 'sell')
+    : side === 'buy';
+
+  const promptSl = () => {
+    const pid = ensureLines();
+    const defSl = parseFloat((entryPrice * (profitOnUp ? 0.985 : 1.015)).toFixed(2));
+    useSlTpPopupStore.getState().open({
+      posId: pid, type: 'sl', symbol: p.trading_symbol,
+      entryPrice, side, suggestedPrice: slLine?.price ?? defSl,
+    });
+  };
+
+  const promptTp = () => {
+    const pid = ensureLines();
+    const defTp = parseFloat((entryPrice * (profitOnUp ? 1.015 : 0.985)).toFixed(2));
+    useSlTpPopupStore.getState().open({
+      posId: pid, type: 'tp', symbol: p.trading_symbol,
+      entryPrice, side, suggestedPrice: tpLine?.price ?? defTp,
+    });
+  };
+
+  // EXIT → open a LIMIT order popup (instead of instant market order)
+  const promptExit = () => {
+    if (qty === 0) return;
+    const pid = ensureLines();
+    const txType: 'BUY' | 'SELL' = qty > 0 ? 'SELL' : 'BUY';
+    const product: 'D' | 'I' = p.product?.toUpperCase() === 'MIS' ? 'I' : 'D';
+    const ltp = p.last_price ?? entryPrice;
+
+    const expiryStr = posExpiry
+      ? new Date(posExpiry).toISOString().split('T')[0]
+      : undefined;
+    let exitOrder: import('../state/slTpPopupStore').ExitLimitOrder;
+    if (isOption) {
+      exitOrder = {
+        qty: Math.abs(qty), transaction_type: txType, product, segment: 'option',
+        underlying: posUnderlying, expiry: expiryStr,
+        strike: posStrike, option_type: posOptType,
+      };
+    } else if (isFuture) {
+      exitOrder = {
+        qty: Math.abs(qty), transaction_type: txType, product, segment: 'future',
+        underlying: posUnderlying, expiry: expiryStr,
+      };
+    } else {
+      exitOrder = {
+        qty: Math.abs(qty), transaction_type: txType, product, segment: 'equity',
+        tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NSE',
+        underlying: p.trading_symbol,
+      };
+    }
+
+    useSlTpPopupStore.getState().open({
+      posId: pid, type: 'exit', symbol: p.trading_symbol,
+      entryPrice, side, suggestedPrice: ltp, exitOrder,
+    });
+  };
+
+  const canSlTp = qty !== 0;
+  const canExit = qty !== 0;
 
   return (
     <div className="pos-row">
@@ -317,11 +568,28 @@ function BrokerPosRow({ p, onCancel }: { p: BrokerPosition; onCancel: ((sym: str
       <span className="pos-price">₹{(p.average_price ?? 0).toFixed(2)}</span>
       <span className="pos-ltp">₹{(p.last_price ?? 0).toFixed(2)}</span>
       <span className={`pos-pnl ${pnlUp ? 'cw-up' : 'cw-down'}`}>
-        {pnlUp ? '+' : '−'}₹{Math.abs(pnl).toFixed(0)}
+        {pnlUp ? '+' : '−'}₹{Math.abs(pnl).toFixed(2)}
       </span>
-      {onCancel ? (
-        <button className="pos-x" title="Cancel / close" onClick={() => onCancel(p.trading_symbol)}>✕</button>
-      ) : <span />}
+      <div className="pos-actions">
+        <button
+          className="pos-sl-btn"
+          title="Set / move Stop Loss on chart"
+          disabled={!canSlTp}
+          onClick={promptSl}
+        >SL</button>
+        <button
+          className="pos-tp-btn"
+          title="Set / move Take Profit on chart"
+          disabled={!canSlTp}
+          onClick={promptTp}
+        >TP</button>
+        <button
+          className="pos-exit-btn"
+          title={canExit ? 'Place LIMIT exit order & show on chart' : 'Position is already flat (qty = 0)'}
+          disabled={!canExit}
+          onClick={promptExit}
+        >EXIT</button>
+      </div>
     </div>
   );
 }
@@ -356,7 +624,7 @@ function PaperPosRow({ p, onRemove }: { p: Position; onRemove: (id: string) => v
       <span className="pos-price">₹{p.price.toFixed(2)}</span>
       <span className="pos-ltp">{hasMeta && spot > 0 ? `₹${cur.toFixed(2)}` : '—'}</span>
       <span className={`pos-pnl ${pnlUp ? 'cw-up' : 'cw-down'}`}>
-        {hasMeta && spot > 0 ? `${pnlUp ? '+' : '−'}₹${Math.abs(pnl).toFixed(0)}` : '—'}
+        {hasMeta && spot > 0 ? `${pnlUp ? '+' : '−'}₹${Math.abs(pnl).toFixed(2)}` : '—'}
       </span>
       <div className="pos-actions">
         <button className="pos-sl-btn" title="Set / move SL on chart" onClick={promptSl}>SL</button>
@@ -422,8 +690,10 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
   }, [clearPaper, removeLines]);
 
   const isLive = source !== 'paper';
+  // Kite's net positions include flat (qty=0) rows — filter those out
+  const openBrokerPositions = brokerPositions.filter((p) => p.quantity !== 0);
   // Always count both broker + paper so the badge reflects reality.
-  const posCount = (isLive ? brokerPositions.length : 0) + paperPositions.length;
+  const posCount = (isLive ? openBrokerPositions.length : 0) + paperPositions.length;
   const ordCount = isLive ? brokerOrders.length : 0;
 
   return (
@@ -470,10 +740,10 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
                     <span>Symbol</span><span>Side</span><span>Qty</span>
                     <span>Avg</span><span>LTP</span><span>P&L</span><span />
                   </div>
-                  {isLive && brokerPositions.map((p) => (
-                    <BrokerPosRow key={p.instrument_token + p.product} p={p} onCancel={null} />
+                  {isLive && openBrokerPositions.map((p) => (
+                    <BrokerPosRow key={p.instrument_token + p.product} p={p} />
                   ))}
-                  {isLive && brokerPositions.length > 0 && paperPositions.length > 0 && (
+                  {isLive && openBrokerPositions.length > 0 && paperPositions.length > 0 && (
                     <div className="pos-section-sep">Paper</div>
                   )}
                   {paperPositions.map((p) => (
@@ -512,12 +782,16 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
 // ─────────────────────────────────────────────────────────────────────────
 
 function SlTpPopup() {
-  const popup     = useSlTpPopupStore((s) => s.popup);
-  const editPrice = useSlTpPopupStore((s) => s.editPrice);
-  const close     = useSlTpPopupStore((s) => s.close);
-  const setEdit   = useSlTpPopupStore((s) => s.setEditPrice);
-  const setSl     = usePriceLinesStore((s) => s.setSl);
-  const setTp     = usePriceLinesStore((s) => s.setTp);
+  const popup        = useSlTpPopupStore((s) => s.popup);
+  const editPrice    = useSlTpPopupStore((s) => s.editPrice);
+  const close        = useSlTpPopupStore((s) => s.close);
+  const setEdit      = useSlTpPopupStore((s) => s.setEditPrice);
+  const setSl        = usePriceLinesStore((s) => s.setSl);
+  const setTp        = usePriceLinesStore((s) => s.setTp);
+  const setExit      = usePriceLinesStore((s) => s.setExit);
+  const placeOrder   = useBrokerStore((s) => s.placeOrder);
+  const activeBroker = useBrokerStore((s) => s.activeBroker);
+  const pushToast    = useToastStore((s) => s.push);
 
   if (!popup) return null;
 
@@ -525,11 +799,41 @@ function SlTpPopup() {
   const isValid = isFinite(price) && price > 0;
   const pct     = popup.entryPrice > 0 ? ((price - popup.entryPrice) / popup.entryPrice) * 100 : 0;
   const isSl    = popup.type === 'sl';
+  const isExit  = popup.type === 'exit';
 
   const confirm = () => {
     if (!isValid) return;
-    if (isSl) setSl(popup.posId, price);
-    else      setTp(popup.posId, price);
+    if (isExit) {
+      // Place LIMIT order at the chosen price, then draw the draggable exit line on chart
+      if (popup.exitOrder) {
+        placeOrder({ ...popup.exitOrder, order_type: 'LIMIT', price })
+          .then((result) => {
+            const reParams: import('../state/priceLinesStore').ExitOrderReParams = {
+              broker: activeBroker,
+              qty: popup.exitOrder!.qty,
+              transaction_type: popup.exitOrder!.transaction_type,
+              product: popup.exitOrder!.product,
+              segment: popup.exitOrder!.segment,
+              underlying: popup.exitOrder!.underlying,
+              expiry: popup.exitOrder!.expiry,
+              strike: popup.exitOrder!.strike,
+              option_type: popup.exitOrder!.option_type,
+              tradingsymbol: popup.exitOrder!.tradingsymbol,
+              exchange: popup.exitOrder!.exchange,
+            };
+            setExit(popup.posId, price, result.order_id, reParams);
+            pushToast(`LIMIT exit placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            pushToast(`LIMIT exit FAILED for ${popup.symbol}: ${msg}`);
+          });
+      }
+    } else if (isSl) {
+      setSl(popup.posId, price);
+    } else {
+      setTp(popup.posId, price);
+    }
     close();
   };
 
@@ -538,14 +842,16 @@ function SlTpPopup() {
       <div className="sltp-overlay" onClick={close} />
       <div className="sltp-popup">
         <div className="sltp-hdr">
-          <span className={`sltp-tag ${isSl ? 'sltp-sl' : 'sltp-tp'}`}>
-            {isSl ? 'Stop Loss' : 'Take Profit'}
+          <span className={`sltp-tag ${isSl ? 'sltp-sl' : isExit ? 'sltp-exit' : 'sltp-tp'}`}>
+            {isSl ? 'Stop Loss' : isExit ? 'Limit Exit' : 'Take Profit'}
           </span>
           <button className="sltp-x" onClick={close}>✕</button>
         </div>
         <div className="sltp-contract">{popup.symbol}</div>
         <div className="sltp-meta">
-          Entry ₹{popup.entryPrice.toFixed(2)} · {popup.side.toUpperCase()}
+          {isExit
+            ? `LTP ₹${popup.suggestedPrice.toFixed(2)} · ${popup.side.toUpperCase()} ${popup.exitOrder?.qty ?? ''} qty`
+            : `Entry ₹${popup.entryPrice.toFixed(2)} · ${popup.side.toUpperCase()}`}
         </div>
         <div className="sltp-row">
           <span className="sltp-lbl">Price (₹)</span>
@@ -558,29 +864,31 @@ function SlTpPopup() {
             onKeyDown={(e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') close(); }}
             autoFocus
           />
-          {isFinite(pct) && (
+          {isFinite(pct) && !isExit && (
             <span className={`sltp-pct ${pct >= 0 ? 'sltp-pct-up' : 'sltp-pct-dn'}`}>
               {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
             </span>
           )}
         </div>
         <div className="sltp-hint">
-          {isSl
-            ? (popup.side === 'buy'
-                ? 'Price must drop to this level to trigger exit'
-                : 'Price must rise to this level to trigger exit')
-            : (popup.side === 'buy'
-                ? 'Price must rise to this level to take profit'
-                : 'Price must drop to this level to take profit')}
+          {isExit
+            ? `Places a LIMIT ${popup.exitOrder?.transaction_type ?? ''} order at this price. Line appears on chart. Cancel the broker order via the Orders tab if needed.`
+            : isSl
+              ? (popup.side === 'buy'
+                  ? 'Price must drop to this level to trigger exit'
+                  : 'Price must rise to this level to trigger exit')
+              : (popup.side === 'buy'
+                  ? 'Price must rise to this level to take profit'
+                  : 'Price must drop to this level to take profit')}
         </div>
         <div className="sltp-btns">
           <button className="sltp-cancel" onClick={close}>Cancel</button>
           <button
-            className={`sltp-confirm ${isSl ? 'sltp-sl-btn' : 'sltp-tp-btn'}`}
+            className={`sltp-confirm ${isSl ? 'sltp-sl-btn' : isExit ? 'sltp-exit-btn' : 'sltp-tp-btn'}`}
             disabled={!isValid}
             onClick={confirm}
           >
-            {isSl ? 'Set Stop Loss' : 'Set Take Profit'}
+            {isSl ? 'Set Stop Loss' : isExit ? 'Place Limit Exit' : 'Set Take Profit'}
           </button>
         </div>
       </div>

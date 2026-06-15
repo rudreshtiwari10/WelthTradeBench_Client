@@ -14,7 +14,23 @@
  */
 import { create } from 'zustand';
 
-export type LineType = 'entry' | 'sl' | 'tp';
+export type LineType = 'entry' | 'sl' | 'tp' | 'exit';
+
+/** Params needed to re-place a LIMIT exit order when the line is dragged. */
+export interface ExitOrderReParams {
+  broker: 'kite' | 'upstox';
+  qty: number;
+  transaction_type: 'BUY' | 'SELL';
+  product: 'D' | 'I';
+  segment: 'option' | 'future' | 'equity';
+  underlying?: string;
+  expiry?: string;
+  strike?: number;
+  option_type?: 'CE' | 'PE';
+  tradingsymbol?: string;
+  exchange?: string;
+  instrument_key?: string;
+}
 
 export interface PositionLine {
   id: string;
@@ -34,6 +50,9 @@ export interface PositionLine {
   instrumentKey?: string; // Upstox key → used for live broker exit
   exitQty?: number;       // lots to exit on SL/TP trigger (defaults to lots)
   triggerAbove?: boolean; // true = fire when index crosses UP through price
+  // LIMIT exit order tracking (for cancel-and-replace on drag)
+  exitOrderId?: string;
+  exitOrderReParams?: ExitOrderReParams;
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────
@@ -60,6 +79,12 @@ interface PriceLinesState {
 
   /** Upsert TP for a position. */
   setTp: (positionId: string, price: number) => void;
+
+  /** Upsert a limit-exit line for a position (placed as LIMIT order on broker). */
+  setExit: (positionId: string, price: number, orderId?: string, params?: ExitOrderReParams) => void;
+
+  /** Update the broker order ID on an existing exit line (called after drag re-place). */
+  updateExitOrder: (positionId: string, orderId: string) => void;
 
   /** Move an individual line to a new price (drag). */
   updatePrice: (id: string, price: number) => void;
@@ -92,9 +117,9 @@ export const usePriceLinesStore = create<PriceLinesState>((set, get) => ({
       slTriggerAbove = !profitOnUp; // SL fires when price crosses INTO loss direction
       tpTriggerAbove =  profitOnUp; // TP fires when price crosses INTO profit direction
     } else {
-      // Legacy option-premium mode (OptionsTicket).
-      slPrice        = parseFloat((entryPrice * (side === 'buy' ? 0.80 : 1.20)).toFixed(2));
-      tpPrice        = parseFloat((entryPrice * (side === 'buy' ? 1.30 : 0.70)).toFixed(2));
+      // Underlying-price mode for futures, equity, or legacy positions (1.5% offset).
+      slPrice        = parseFloat((entryPrice * (side === 'buy' ? 0.985 : 1.015)).toFixed(2));
+      tpPrice        = parseFloat((entryPrice * (side === 'buy' ? 1.015 : 0.985)).toFixed(2));
       slTriggerAbove = side !== 'buy';
       tpTriggerAbove = side === 'buy';
     }
@@ -129,6 +154,32 @@ export const usePriceLinesStore = create<PriceLinesState>((set, get) => ({
       const tp: PositionLine = { ...entry, id: uid(), type: 'tp', price };
       set(s => { const lines = [...s.lines, tp]; saveLines(lines); return { lines }; });
     }
+  },
+
+  setExit(positionId, price, orderId?, params?) {
+    const existing = get().lines.find(l => l.positionId === positionId && l.type === 'exit');
+    if (existing) {
+      set(s => {
+        const lines = s.lines.map(l => l.id === existing.id
+          ? { ...l, price, ...(orderId !== undefined ? { exitOrderId: orderId } : {}), ...(params ? { exitOrderReParams: params } : {}) }
+          : l);
+        saveLines(lines); return { lines };
+      });
+    } else {
+      const entry = get().lines.find(l => l.positionId === positionId && l.type === 'entry');
+      if (!entry) return;
+      const exit: PositionLine = { ...entry, id: uid(), type: 'exit', price, exitOrderId: orderId, exitOrderReParams: params };
+      set(s => { const lines = [...s.lines, exit]; saveLines(lines); return { lines }; });
+    }
+  },
+
+  updateExitOrder(positionId, orderId) {
+    set(s => {
+      const lines = s.lines.map(l =>
+        l.positionId === positionId && l.type === 'exit' ? { ...l, exitOrderId: orderId } : l
+      );
+      saveLines(lines); return { lines };
+    });
   },
 
   updatePrice(id, price) {

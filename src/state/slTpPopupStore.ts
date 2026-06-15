@@ -1,12 +1,27 @@
 import { create } from 'zustand';
 
+export interface ExitLimitOrder {
+  qty: number;
+  transaction_type: 'BUY' | 'SELL';
+  product: 'D' | 'I';
+  segment: 'option' | 'future' | 'equity';
+  underlying?: string;
+  expiry?: string;
+  strike?: number;
+  option_type?: 'CE' | 'PE';
+  tradingsymbol?: string;
+  exchange?: string;
+}
+
 export interface SlTpPopupData {
   posId: string;
-  type: 'sl' | 'tp';
+  type: 'sl' | 'tp' | 'exit';
   symbol: string;
   entryPrice: number;
   side: 'buy' | 'sell';
   suggestedPrice: number;
+  /** Populated only for type='exit' — the LIMIT order to place on confirm */
+  exitOrder?: ExitLimitOrder;
 }
 
 interface SlTpPopupState {

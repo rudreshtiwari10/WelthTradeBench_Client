@@ -481,6 +481,12 @@ export function ChartView() {
       const series = priceSeriesRef.current;
       if (!series) return;
       const candles = candlesRef.current;
+
+      // Check if user is at (or within 3 bars of) the right edge BEFORE adding the new bar.
+      // If they have panned away, preserve their viewport position.
+      const range = chartRef.current?.timeScale().getVisibleLogicalRange();
+      const wasAtRightEdge = !range || range.to >= candles.length - 3;
+
       const newBar: Candle = {
         time: ts,
         open: openPrice,
@@ -492,7 +498,7 @@ export function ChartView() {
       candles.push(newBar);
       series.update(priceData([newBar], chartTypeRef.current)[0] as any);
       volSeriesRef.current?.update({ time: ts as any, value: 0, color: 'rgba(120,120,120,0.35)' });
-      chartRef.current?.timeScale().scrollToRealTime();
+      if (wasAtRightEdge) chartRef.current?.timeScale().scrollToRealTime();
       useChartStore.getState().setBarCount(candles.length);
       const prev = candles[candles.length - 2];
       setLegend({

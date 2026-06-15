@@ -12,6 +12,7 @@ import { LineStyle } from 'lightweight-charts';
 import { useChartApi } from '../chart/ChartContext';
 import { usePriceLinesStore } from '../state/priceLinesStore';
 import type { PositionLine } from '../state/priceLinesStore';
+import { cancelBrokerOrder, placeBrokerOrder } from '../data/brokerService';
 import { usePositionsStore } from '../state/positionsStore';
 import { useBrokerStore } from '../state/brokerStore';
 import { useToastStore } from '../state/toastStore';
@@ -23,11 +24,13 @@ import './PositionLines.css';
 // ─── Styling helpers ──────────────────────────────────────────────────────
 function lineColor(l: PositionLine): string {
   if (l.type === 'entry') return l.side === 'buy' ? '#26a69a' : '#ef5350';
+  if (l.type === 'exit')  return '#f57c00';  // orange for limit-exit lines
   return l.type === 'sl' ? '#ef5350' : '#26a69a';
 }
 
 function chartLineTitle(l: PositionLine): string {
   if (l.type === 'entry') return `${l.side.toUpperCase()} ${l.qty}qty @ ₹${l.price.toFixed(2)}`;
+  if (l.type === 'exit')  return `EXIT LIMIT ₹${l.price.toFixed(2)}`;
   const pct = l.entryPrice > 0 ? ((l.price - l.entryPrice) / l.entryPrice) * 100 : 0;
   return `${l.type.toUpperCase()} ₹${l.price.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
 }
@@ -56,14 +59,20 @@ export function PositionLines() {
   const currentSymbol = useChartStore((s) => s.symbol.symbol);
   const dataVersion   = useChartStore((s) => s.dataVersion);
 
-  const allLines     = usePriceLinesStore((s) => s.lines);
-  const updatePrice  = usePriceLinesStore((s) => s.updatePrice);
-  const updateExitQty = usePriceLinesStore((s) => s.updateExitQty);
-  const removeLine   = usePriceLinesStore((s) => s.removeLine);
-  const removeByPos  = usePriceLinesStore((s) => s.removeByPosition);
+  const allLines        = usePriceLinesStore((s) => s.lines);
+  const updatePrice     = usePriceLinesStore((s) => s.updatePrice);
+  const updateExitQty   = usePriceLinesStore((s) => s.updateExitQty);
+  const updateExitOrder = usePriceLinesStore((s) => s.updateExitOrder);
+  const removeLine      = usePriceLinesStore((s) => s.removeLine);
+  const removeByPos     = usePriceLinesStore((s) => s.removeByPosition);
 
   const removePosition = usePositionsStore((s) => s.remove);
   const pushToast      = useToastStore((s) => s.push);
+
+  const brokerSource = useBrokerStore((s) => s.source);
+  const activeBroker = useBrokerStore((s) => s.activeBroker);
+  const cancelOrder  = useBrokerStore((s) => s.cancelOrder);
+  const placeOrder   = useBrokerStore((s) => s.placeOrder);
 
   // Lines whose underlying matches the chart symbol
   const activeLines = allLines.filter((l) => l.underlying === currentSymbol);
@@ -73,7 +82,7 @@ export function PositionLines() {
 
   const handleYsRef = useRef<Record<string, number>>({});
   const [syncKey, setSyncKey] = useState(0);
-  const dragRef = useRef<{ id: string } | null>(null);
+  const dragRef = useRef<{ id: string; startPrice: number } | null>(null);
 
   // ── 1. Sync lightweight-charts price lines ────────────────────────────
   useEffect(() => {
@@ -148,6 +157,7 @@ export function PositionLines() {
 
       for (const line of activeLinesRef.current) {
         if (line.type === 'entry') continue;
+        if (line.type === 'exit') continue;  // LIMIT exit already placed on broker — broker handles it
 
         // Resolve trigger direction: explicit flag or fall back to side-based logic.
         const triggerAbove = line.triggerAbove
@@ -178,13 +188,69 @@ export function PositionLines() {
         const lotSz = line.lots && line.lots > 0 ? line.qty / line.lots : 1;
         const exitQtyUnits = Math.round(exitLots * lotSz);
 
-        const brokerSource = useBrokerStore.getState().source;
-        if (brokerSource === 'upstox' && line.instrumentKey) {
-          useBrokerStore.getState().placeOrder({
-            instrument_key: line.instrumentKey,
-            qty: exitQtyUnits,
-            transaction_type: line.side === 'buy' ? 'SELL' : 'BUY',
-          }).catch(() => {});
+        const state = useBrokerStore.getState();
+        if (state.source !== 'paper') {
+          const expiryStr = line.expiryDate
+            ? new Date(line.expiryDate).toISOString().split('T')[0]
+            : undefined;
+          const txType = (line.side === 'buy' ? 'SELL' : 'BUY') as 'BUY' | 'SELL';
+          let orderP: Promise<unknown> | null = null;
+          if (state.activeBroker === 'kite') {
+            if (line.underlying && expiryStr && line.strike && line.optType) {
+              // Option exit via instrument dump resolution
+              orderP = state.placeOrder({
+                qty: exitQtyUnits,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                product: 'D',
+                segment: 'option',
+                underlying: line.underlying,
+                expiry: expiryStr,
+                strike: line.strike,
+                option_type: line.optType,
+              });
+            } else if (line.underlying && expiryStr && !line.optType) {
+              // Future exit
+              orderP = state.placeOrder({
+                qty: exitQtyUnits,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                product: 'D',
+                segment: 'future',
+                underlying: line.underlying,
+                expiry: expiryStr,
+              });
+            } else if (line.underlying) {
+              // Equity exit — no dump lookup needed, use symbol directly
+              orderP = state.placeOrder({
+                qty: exitQtyUnits,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                product: 'D',
+                segment: 'equity',
+                underlying: line.underlying,
+              });
+            }
+          } else if (line.instrumentKey) {
+            // Upstox exit
+            orderP = state.placeOrder({
+              instrument_key: line.instrumentKey,
+              qty: exitQtyUnits,
+              transaction_type: txType,
+              order_type: 'MARKET',
+              product: 'D',
+            });
+          }
+          if (orderP) {
+            orderP
+              .then(() => pushToast(`Exit order sent: ${line.symbol} ${txType} ${exitQtyUnits}qty`))
+              .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                pushToast(`Exit order FAILED for ${line.symbol}: ${msg}`);
+              });
+          } else {
+            pushToast(`Cannot exit ${line.symbol}: missing instrument info — close manually`);
+          }
         } else {
           removePosition(line.positionId);
         }
@@ -197,10 +263,10 @@ export function PositionLines() {
   }, [currentSymbol, removePosition, removeByPos, pushToast]);
 
   // ── 4. Drag handlers ─────────────────────────────────────────────────
-  const onHandleMouseDown = useCallback((id: string, e: React.MouseEvent) => {
+  const onHandleMouseDown = useCallback((id: string, startPrice: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragRef.current = { id };
+    dragRef.current = { id, startPrice };
   }, []);
 
   useEffect(() => {
@@ -214,13 +280,132 @@ export function PositionLines() {
       if (newPrice != null && newPrice > 0)
         updatePrice(dragRef.current.id, parseFloat(newPrice.toFixed(2)));
     };
-    const onUp = () => { dragRef.current = null; };
+    const onUp = () => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      if (!drag) return;
+
+      // For exit lines: cancel the old LIMIT order and re-place at the new price
+      const line = usePriceLinesStore.getState().lines.find(l => l.id === drag.id);
+      if (!line || line.type !== 'exit' || !line.exitOrderReParams) return;
+      if (Math.abs(line.price - drag.startPrice) < 0.01) return;  // no meaningful move
+
+      const { exitOrderId, exitOrderReParams, price, positionId, symbol } = line;
+      const pushT = useToastStore.getState().push;
+      const upd   = usePriceLinesStore.getState().updateExitOrder;
+
+      const doPlace = () => {
+        placeBrokerOrder({
+          broker: exitOrderReParams.broker,
+          order_type: 'LIMIT',
+          price,
+          qty: exitOrderReParams.qty,
+          transaction_type: exitOrderReParams.transaction_type,
+          product: exitOrderReParams.product,
+          segment: exitOrderReParams.segment,
+          underlying: exitOrderReParams.underlying,
+          expiry: exitOrderReParams.expiry,
+          strike: exitOrderReParams.strike,
+          option_type: exitOrderReParams.option_type,
+          tradingsymbol: exitOrderReParams.tradingsymbol,
+          exchange: exitOrderReParams.exchange,
+          instrument_key: exitOrderReParams.instrument_key,
+        })
+          .then((result) => {
+            if (result.order_id) upd(positionId, result.order_id);
+            pushT(`LIMIT exit moved: ${symbol} @ ₹${price.toFixed(2)}`);
+            // Refresh broker data
+            useBrokerStore.getState().refresh();
+          })
+          .catch((err: unknown) => {
+            pushT(`Failed to re-place LIMIT exit: ${err instanceof Error ? err.message : String(err)}`);
+          });
+      };
+
+      if (exitOrderId) {
+        cancelBrokerOrder(exitOrderId, exitOrderReParams.broker)
+          .then(doPlace)
+          .catch(doPlace);  // if cancel fails (already filled?), still try new order
+      } else {
+        doPlace();
+      }
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [updatePrice, seriesRef, containerRef]);
 
-  // ── 5. Render HTML handles ────────────────────────────────────────────
+  // ── 5. Entry × — cancel pending order or exit filled position in broker ─
+  const handleEntryClose = useCallback(async (line: PositionLine) => {
+    if (brokerSource !== 'paper') {
+      const cancelled = await cancelOrder(line.positionId);
+      if (cancelled) {
+        pushToast(`Order cancelled: ${line.symbol}`);
+      } else {
+        // Order already filled — place a closing/exit order
+        try {
+          const expiryStr = line.expiryDate
+            ? new Date(line.expiryDate).toISOString().split('T')[0]
+            : undefined;
+          const txType = (line.side === 'buy' ? 'SELL' : 'BUY') as 'BUY' | 'SELL';
+          if (activeBroker === 'kite') {
+            if (line.underlying && expiryStr && line.strike && line.optType) {
+              await placeOrder({
+                qty: line.qty,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                segment: 'option',
+                underlying: line.underlying,
+                expiry: expiryStr,
+                strike: line.strike,
+                option_type: line.optType,
+              });
+            } else if (line.underlying && expiryStr && !line.optType) {
+              await placeOrder({
+                qty: line.qty,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                segment: 'future',
+                underlying: line.underlying,
+                expiry: expiryStr,
+              });
+            } else if (line.underlying) {
+              // Equity: use symbol directly, no instrument dump needed
+              await placeOrder({
+                qty: line.qty,
+                transaction_type: txType,
+                order_type: 'MARKET',
+                segment: 'equity',
+                underlying: line.underlying,
+              });
+            } else {
+              pushToast(`Could not exit ${line.symbol} — cancel from Orders tab`);
+              removeByPos(line.positionId);
+              return;
+            }
+          } else if (line.instrumentKey) {
+            await placeOrder({
+              instrument_key: line.instrumentKey,
+              qty: line.qty,
+              transaction_type: txType,
+            });
+          } else {
+            pushToast(`Could not exit ${line.symbol} — cancel from Orders tab`);
+            removeByPos(line.positionId);
+            return;
+          }
+          pushToast(`Position closed: ${line.symbol}`);
+        } catch {
+          pushToast(`Could not close ${line.symbol} — try via Orders tab`);
+        }
+      }
+    } else {
+      removePosition(line.positionId);
+    }
+    removeByPos(line.positionId);
+  }, [brokerSource, activeBroker, cancelOrder, placeOrder, removePosition, removeByPos, pushToast]);
+
+  // ── 6. Render HTML handles ────────────────────────────────────────────
   void syncKey;
 
   return (
@@ -235,13 +420,37 @@ export function PositionLines() {
             <span className="pl-entry-side">{line.side.toUpperCase()}</span>
             <span className="pl-entry-price">₹{line.price.toFixed(2)}</span>
             <span className="pl-entry-qty">{line.lots ? `${line.lots}L` : `${line.qty}qty`}</span>
-            <button className="pl-x" title="Remove entry line" onClick={() => removeLine(line.id)}>×</button>
+            <button className="pl-x" title="Cancel / close position in broker" onClick={() => handleEntryClose(line)}>×</button>
+          </div>
+        );
+      })}
+
+      {/* Limit-exit lines — draggable; on drag-end cancels old order + places new */}
+      {activeLines.filter((l) => l.type === 'exit').map((line) => {
+        const y = handleYsRef.current[line.id];
+        if (y == null) return null;
+        const draggable = !!line.exitOrderReParams;
+        return (
+          <div
+            key={line.id}
+            className={`pl-handle pl-exit-limit${draggable ? '' : ' pl-exit-nodrag'}`}
+            style={{ top: Math.round(y) - 14 }}
+            onMouseDown={draggable ? (e) => onHandleMouseDown(line.id, line.price, e) : undefined}
+          >
+            {draggable && <span className="pl-grip">⠿</span>}
+            <span className="pl-exit-limit-tag">LIMIT EXIT</span>
+            <span className="pl-handle-price">₹{line.price.toFixed(2)}</span>
+            <button
+              className="pl-x"
+              title="Remove exit line from chart (does NOT cancel the broker order — cancel via Orders tab)"
+              onClick={(e) => { e.stopPropagation(); removeLine(line.id); }}
+            >×</button>
           </div>
         );
       })}
 
       {/* SL / TP drag handles with P&L and exit-qty editor */}
-      {activeLines.filter((l) => l.type !== 'entry').map((line) => {
+      {activeLines.filter((l) => l.type !== 'entry' && l.type !== 'exit').map((line) => {
         const y = handleYsRef.current[line.id];
         if (y == null) return null;
 
@@ -262,7 +471,7 @@ export function PositionLines() {
             key={line.id}
             className={`pl-handle pl-${line.type}${qtyErr ? ' pl-handle-err' : ''}`}
             style={{ top: Math.round(y) - 14 }}
-            onMouseDown={(e) => onHandleMouseDown(line.id, e)}
+            onMouseDown={(e) => onHandleMouseDown(line.id, line.price, e)}
           >
             {/* Price badge */}
             <span className="pl-handle-price">₹{line.price.toFixed(2)}</span>

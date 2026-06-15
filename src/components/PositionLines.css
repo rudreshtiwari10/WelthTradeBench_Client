@@ -71,6 +71,20 @@
   border-color: #26a69a;
   color: #fff;
 }
+.pl-exit-limit {
+  background: rgba(245, 124, 0, 0.92);
+  border-color: #f57c00;
+  color: #fff;
+  cursor: ns-resize;
+}
+.pl-exit-nodrag {
+  cursor: default;
+}
+.pl-exit-limit-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
 
 .pl-grip {
   font-size: 15px;
