@@ -167,7 +167,7 @@
 .cw-pnl-meta { margin-top: 2px; }
 
 /* ── Positions Terminal ── */
-.cw-positions { min-width: 460px; }
+.cw-positions { min-width: 540px; }
 
 .cw-terminal-body {
   padding: 0;
@@ -178,7 +178,7 @@
 /* Sticky header row inside the scrollable body */
 .pos-head {
   display: grid;
-  grid-template-columns: 1fr 50px 42px 66px 66px 66px 72px;
+  grid-template-columns: 1fr 50px 42px 66px 66px 66px 92px 72px;
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
@@ -196,7 +196,7 @@
 
 .pos-row {
   display: grid;
-  grid-template-columns: 1fr 50px 42px 66px 66px 66px 72px;
+  grid-template-columns: 1fr 50px 42px 66px 66px 66px 92px 72px;
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
@@ -244,6 +244,14 @@
 
 .pos-pnl.cw-up   { color: var(--up);   font-weight: 600; }
 .pos-pnl.cw-down { color: var(--down); font-weight: 600; }
+
+.pos-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .pos-x {
   color: var(--text-dim);

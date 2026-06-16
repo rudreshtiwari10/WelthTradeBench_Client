@@ -174,6 +174,14 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   }),
 
   newLayout: () => set((s) => {
+    // Fresh, blank workspace to start building a new layout — does not touch any
+    // already-saved layout doc (those live untouched in `layouts` / Mongo).
+    usePanelsStore.getState().resetToDefault();
+    const defaultSymbol: SymbolInfo = { symbol: 'NIFTY', name: 'Nifty 50 Index', exchange: 'NSE', kind: 'index' };
+    useChartStore.getState().setSymbol(defaultSymbol);
+    useChartStore.getState().setInterval('1D');
+    useChartStore.getState().setChartType('candles');
+    useSettingsStore.getState().reset();
     useIndicatorStore.getState().setInstances([]);
     persistLocal({ layouts: s.layouts, currentId: null, name: 'Unnamed' });
     return { currentId: null, name: 'Unnamed' };
@@ -186,12 +194,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       if (!res.ok) return;
       const layouts: Layout[] = await res.json();
       const { currentId, name } = get();
+      // Note: the active live session (symbol/panels/settings/indicators) is restored
+      // by workspaceSync.fetchWorkspace(), not here — this only refreshes the named-layout
+      // list so the Save/Load menu reflects what's saved server-side.
       persistLocal({ layouts, currentId, name });
       set({ layouts });
-      // Restore the active layout (panels, settings, indicators) after login
-      if (currentId && layouts.some((l) => l.id === currentId)) {
-        get().load(currentId);
-      }
     } catch (e) {
       console.error('[layoutStore] fetchLayouts failed:', e);
     }

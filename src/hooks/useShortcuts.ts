@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useDrawingStore, type Tool } from '../state/drawingStore';
+import { useDrawingStoreRaw, getActiveDrawingKey, type Tool } from '../state/drawingStore';
 import { useUiStore } from '../state/uiStore';
 import { useHistoryStore } from '../state/historyStore';
 import { useChartStore } from '../state/chartStore';
@@ -91,18 +91,24 @@ export function useShortcuts() {
           useToastStore.getState().push('Layout saved');
           return;
         }
-        if (klo === 'c' && !e.shiftKey) { e.preventDefault(); useDrawingStore.getState().copySelected(); return; }
-        if (klo === 'v' && !e.shiftKey) { e.preventDefault(); useDrawingStore.getState().paste(); return; }
-        if (klo === 'd') { e.preventDefault(); const id = useDrawingStore.getState().selectedId; if (id) useDrawingStore.getState().duplicateDrawing(id); return; }
+        if (klo === 'c' && !e.shiftKey) { e.preventDefault(); useDrawingStoreRaw.getState().copySelected(getActiveDrawingKey()); return; }
+        if (klo === 'v' && !e.shiftKey) { e.preventDefault(); useDrawingStoreRaw.getState().paste(getActiveDrawingKey()); return; }
+        if (klo === 'd') {
+          e.preventDefault();
+          const k = getActiveDrawingKey();
+          const id = useDrawingStoreRaw.getState().selectedIdByKey[k];
+          if (id) useDrawingStoreRaw.getState().duplicateDrawing(k, id);
+          return;
+        }
         return;
       }
 
       // ── Alt + key → drawing tool ─────────────────────────────────────
       if (e.altKey) {
         e.preventDefault();
-        if (ALT_TOOL[klo]) { useDrawingStore.getState().setTool(ALT_TOOL[klo]); return; }
+        if (ALT_TOOL[klo]) { useDrawingStoreRaw.getState().setTool(ALT_TOOL[klo]); return; }
         if (klo === 'i')   { useUiStore.getState().openIndicators(); return; }
-        if (klo === 'w')   { useDrawingStore.getState().setTool('cursor'); return; }
+        if (klo === 'w')   { useDrawingStoreRaw.getState().setTool('cursor'); return; }
         return;
       }
 
@@ -110,22 +116,26 @@ export function useShortcuts() {
 
       // Escape: cancel draft / deselect
       if (key === 'Escape') {
-        useDrawingStore.getState().setTool('cursor');
-        useDrawingStore.getState().select(null);
-        useDrawingStore.getState().clearMultiSelect();
+        const k = getActiveDrawingKey();
+        useDrawingStoreRaw.getState().setTool('cursor');
+        useDrawingStoreRaw.getState().select(k, null);
+        useDrawingStoreRaw.getState().clearMultiSelect(k);
         return;
       }
 
       // Delete / Backspace: remove selected drawing(s)
       if (key === 'Delete' || key === 'Backspace') {
-        const st = useDrawingStore.getState();
-        if (st.multiSelected.length > 0) { st.removeMultiSelected(); return; }
-        if (st.selectedId) { st.removeDrawing(st.selectedId); }
+        const k = getActiveDrawingKey();
+        const st = useDrawingStoreRaw.getState();
+        const multi = st.multiSelectedByKey[k] ?? [];
+        if (multi.length > 0) { st.removeMultiSelected(k); return; }
+        const sel = st.selectedIdByKey[k];
+        if (sel) { st.removeDrawing(k, sel); }
         return;
       }
 
       // Space: switch to crosshair cursor
-      if (key === ' ') { e.preventDefault(); useDrawingStore.getState().setTool('cursor'); return; }
+      if (key === ' ') { e.preventDefault(); useDrawingStoreRaw.getState().setTool('cursor'); return; }
 
       // H: reset chart view
       if (klo === 'h' && !e.shiftKey) {

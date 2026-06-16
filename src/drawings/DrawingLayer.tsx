@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useChartApi } from '../chart/ChartContext';
 import { useDrawingStore, type Tool } from '../state/drawingStore';
 import { useUiStore } from '../state/uiStore';
-import { useChartStore } from '../state/chartStore';
+import { usePanelId } from '../state/PanelContext';
+import { usePanelsStore } from '../state/panelsStore';
 import { renderDrawing, renderHoverHighlight, hitTest, handleHit, type Pt } from './geometry';
 import { POINT_COUNT, EW_LABELS, type DPoint, type Drawing, type DrawingType } from './types';
 import { TOOL_GROUPS, groupTools } from './tools';
@@ -26,6 +27,10 @@ interface CtxMenu { x: number; y: number; drawingId: string }
 export function DrawingLayer() {
   const { chartRef, seriesRef, candlesRef, ready } = useChartApi();
   const store = useDrawingStore();
+  const panelId = usePanelId();
+  // This panel's OWN interval — not the globally-mirrored "active panel" interval,
+  // so timeframe-visibility checks are correct for every panel in split-screen.
+  const myInterval = usePanelsStore((st) => st.panels.find((p) => p.id === panelId)?.interval ?? '1D');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [capture, setCapture] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
@@ -51,6 +56,7 @@ export function DrawingLayer() {
 
   // Keep latest store values for event handlers without re-binding listeners.
   const s = useRef(store); s.current = store;
+  const intervalRef = useRef(myInterval); intervalRef.current = myInterval;
 
   // ── Shift-constrain helper ────────────────────────────────────────────
   // Snaps the cursor pixel to the nearest 45° from the anchor pixel.
@@ -117,7 +123,7 @@ export function DrawingLayer() {
 
         if (!s.current.hidden) {
           const multiSet = new Set(s.current.multiSelected);
-          const currentInterval = useChartStore.getState().interval;
+          const currentInterval = intervalRef.current;
           for (const d of s.current.drawings) {
             if (d.hidden) continue;                    // ← per-drawing hide
             // Timeframe visibility: if set, skip if current interval not included

@@ -103,6 +103,50 @@ function ModeBadge({ source, sandbox }: { source: string; sandbox: boolean }) {
   return <span className={`cw-mode-badge ${sandbox ? 'sandbox' : 'live'}`}>{sandbox ? 'SANDBOX' : 'LIVE'}</span>;
 }
 
+// ─── Date / time helpers (Positions & Orders "Time" column) ──────────────
+
+/** Compact "16 Jun, 14:32" for an epoch-ms timestamp. */
+function fmtDateTime(ms: number): string {
+  const d = new Date(ms);
+  const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date}, ${time}`;
+}
+
+/**
+ * Broker order timestamps differ in format between Kite ("2024-06-16 09:15:32")
+ * and Upstox (similar, sometimes "DD-MM-YYYY HH:mm:ss"). Try both before giving up.
+ */
+function parseOrderTimestamp(ts: string | undefined | null): Date | null {
+  if (!ts) return null;
+  const isoLike = ts.includes(' ') && !ts.includes('T') ? ts.replace(' ', 'T') : ts;
+  let d = new Date(isoLike);
+  if (!isNaN(d.getTime())) return d;
+  const m = ts.match(/^(\d{2})-(\d{2})-(\d{4})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (m) {
+    const [, dd, mm, yyyy, hh, mi, ss] = m;
+    d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function fmtOrderTime(ts: string | undefined | null): string {
+  const d = parseOrderTimestamp(ts);
+  return d ? fmtDateTime(d.getTime()) : (ts || '—');
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Keeps only today's orders — defends against any broker/sandbox returning stale days. */
+function isOrderFromToday(o: { order_timestamp?: string }): boolean {
+  const d = parseOrderTimestamp(o.order_timestamp);
+  if (!d) return true; // unparseable — don't hide a legitimate order over a format quirk
+  return isSameLocalDay(d, new Date());
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // ACCOUNT FUNDS WIDGET
 // ─────────────────────────────────────────────────────────────────────────
@@ -559,6 +603,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
 
   const canSlTp = qty !== 0;
   const canExit = qty !== 0;
+  const lastUpdated = useBrokerStore((s) => s.lastUpdated);
 
   return (
     <div className="pos-row">
@@ -570,6 +615,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
       <span className={`pos-pnl ${pnlUp ? 'cw-up' : 'cw-down'}`}>
         {pnlUp ? '+' : '−'}₹{Math.abs(pnl).toFixed(2)}
       </span>
+      <span className="pos-time" title="Last synced from broker">{lastUpdated ? fmtDateTime(lastUpdated) : '—'}</span>
       <div className="pos-actions">
         <button
           className="pos-sl-btn"
@@ -626,6 +672,7 @@ function PaperPosRow({ p, onRemove }: { p: Position; onRemove: (id: string) => v
       <span className={`pos-pnl ${pnlUp ? 'cw-up' : 'cw-down'}`}>
         {hasMeta && spot > 0 ? `${pnlUp ? '+' : '−'}₹${Math.abs(pnl).toFixed(2)}` : '—'}
       </span>
+      <span className="pos-time" title="Position opened">{fmtDateTime(p.ts)}</span>
       <div className="pos-actions">
         <button className="pos-sl-btn" title="Set / move SL on chart" onClick={promptSl}>SL</button>
         <button className="pos-tp-btn" title="Set / move TP on chart" onClick={promptTp}>TP</button>
@@ -649,6 +696,7 @@ function OrderRow({ o, onCancel }: { o: import('../data/brokerService').BrokerOr
       <span className="pos-price">{o.order_type}</span>
       <span className="pos-ltp">₹{(o.average_price || o.price || 0).toFixed(2)}</span>
       <span className={`pos-pnl ${statusCls}`}>{o.status}</span>
+      <span className="pos-time" title={o.order_timestamp}>{fmtOrderTime(o.order_timestamp)}</span>
       {isOpen
         ? <button className="pos-x" title="Cancel order" onClick={() => onCancel(o.order_id)}>✕</button>
         : <span />}
@@ -694,7 +742,14 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
   const openBrokerPositions = brokerPositions.filter((p) => p.quantity !== 0);
   // Always count both broker + paper so the badge reflects reality.
   const posCount = (isLive ? openBrokerPositions.length : 0) + paperPositions.length;
-  const ordCount = isLive ? brokerOrders.length : 0;
+  // Both Kite's and Upstox's order-book endpoints already return only the
+  // current trading day, but filter defensively so old/stale entries never show.
+  // Sort newest-first so the most recently traded order leads, working backward through the day.
+  const todaysOrders = brokerOrders
+    .filter(isOrderFromToday)
+    .slice()
+    .sort((a, b) => (parseOrderTimestamp(b.order_timestamp)?.getTime() ?? 0) - (parseOrderTimestamp(a.order_timestamp)?.getTime() ?? 0));
+  const ordCount = isLive ? todaysOrders.length : 0;
 
   return (
     <div
@@ -738,7 +793,7 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
                 <>
                   <div className="pos-head">
                     <span>Symbol</span><span>Side</span><span>Qty</span>
-                    <span>Avg</span><span>LTP</span><span>P&L</span><span />
+                    <span>Avg</span><span>LTP</span><span>P&L</span><span>Time</span><span />
                   </div>
                   {isLive && openBrokerPositions.map((p) => (
                     <BrokerPosRow key={p.instrument_token + p.product} p={p} />
@@ -762,9 +817,9 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
                 <>
                   <div className="pos-head">
                     <span>Symbol</span><span>Side</span><span>Qty</span>
-                    <span>Type</span><span>Price</span><span>Status</span><span />
+                    <span>Type</span><span>Price</span><span>Status</span><span>Time</span><span />
                   </div>
-                  {brokerOrders.map((o) => (
+                  {todaysOrders.map((o) => (
                     <OrderRow key={o.order_id} o={o} onCancel={(id) => cancelOrder(id)} />
                   ))}
                 </>

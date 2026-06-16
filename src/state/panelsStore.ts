@@ -51,6 +51,8 @@ interface PanelsState {
   setLayout: (l: GridLayout) => void;
   setActive: (id: string) => void;
   updatePanel: (id: string, patch: Partial<Panel>) => void;
+  hydrate: (layout: GridLayout, panels: Panel[], activeId: string) => void;
+  resetToDefault: () => void;
 }
 
 const init = loadPanels();
@@ -82,4 +84,17 @@ export const usePanelsStore = create<PanelsState>((set) => ({
     savePanels(s.layout, panels, s.activeId);
     return { panels };
   }),
+
+  hydrate: (layout, panels, activeId) => {
+    const safePanels = panels.length > 0 ? panels : [defaultPanel('p1')];
+    const safeActiveId = safePanels.some((p) => p.id === activeId) ? activeId : safePanels[0].id;
+    savePanels(layout, safePanels, safeActiveId);
+    set({ layout, panels: safePanels, activeId: safeActiveId });
+  },
+
+  resetToDefault: () => {
+    const panels = [defaultPanel('p1')];
+    savePanels('single', panels, 'p1');
+    set({ layout: 'single', panels, activeId: 'p1' });
+  },
 }));

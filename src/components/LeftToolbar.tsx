@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../icons/Icon';
 import { TOOL_GROUPS, groupTools, type ToolDef, type ToolGroup } from '../drawings/tools';
-import { useDrawingStore, type Tool, type FavDef } from '../state/drawingStore';
+import { useDrawingStoreRaw, useActiveDrawingKey, type Tool, type FavDef } from '../state/drawingStore';
 import { useUiStore } from '../state/uiStore';
 import './LeftToolbar.css';
 
 export function LeftToolbar() {
+  // App-level toolbar (not rendered inside any panel), so it reads/writes the
+  // raw store directly against the ACTIVE panel's key rather than a fixed
+  // default — tool selection itself stays global across all panels.
   const {
     activeTool, setTool, magnet, stayInDrawing, locked, hidden,
-    toggleMagnet, toggleStay, toggleLocked, toggleHidden, clearAll,
-    favorites, toggleFavorite, isFavorite,
-  } = useDrawingStore();
+    toggleMagnet, toggleStay, toggleLocked, toggleHidden,
+    favorites, toggleFavorite, isFavorite, setFavorites,
+  } = useDrawingStoreRaw();
+  const activeKey = useActiveDrawingKey();
+  const clearAll = () => useDrawingStoreRaw.getState().clearAll(activeKey);
   const { objectTreeOpen, toggleObjectTree } = useUiStore();
   const [collapsed, setCollapsed] = useState(false);
   const [flyout, setFlyout] = useState<string | null>(null);
@@ -50,7 +55,7 @@ export function LeftToolbar() {
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
     // Write back through store via a bulk-replace helper
-    useDrawingStore.getState().setFavorites(next);
+    setFavorites(next);
   };
 
   return (

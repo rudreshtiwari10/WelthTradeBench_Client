@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Drawing } from '../drawings/types';
 import type { IndicatorInstance } from './indicatorStore';
-import { useDrawingStore } from './drawingStore';
+import { useDrawingStoreRaw, getActiveDrawingKey } from './drawingStore';
 import { useIndicatorStore } from './indicatorStore';
 
 export interface Snapshot {
@@ -22,13 +22,19 @@ interface HistoryState {
 
 const MAX = 100;
 
-const snapshot = (): Snapshot => ({
-  drawings: structuredClone(useDrawingStore.getState().drawings),
-  indicators: structuredClone(useIndicatorStore.getState().instances),
-});
+// This app-wide Ctrl+Z tracks whichever panel is currently active — drawings
+// are per-key now, so there's no single global "the" drawing set anymore.
+const snapshot = (): Snapshot => {
+  const key = getActiveDrawingKey();
+  return {
+    drawings: structuredClone(useDrawingStoreRaw.getState().drawingsByKey[key] ?? []),
+    indicators: structuredClone(useIndicatorStore.getState().instances),
+  };
+};
 
 const apply = (s: Snapshot) => {
-  useDrawingStore.getState().setDrawings(structuredClone(s.drawings));
+  const key = getActiveDrawingKey();
+  useDrawingStoreRaw.getState().setDrawings(key, structuredClone(s.drawings));
   useIndicatorStore.getState().setInstances(structuredClone(s.indicators));
 };
 
@@ -64,13 +70,23 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 /** Wire change-tracking once at app start. Records the PREVIOUS state whenever
  *  drawings or indicators change (except while restoring an undo/redo). */
 export function initHistoryTracking() {
-  let prevDrawings = useDrawingStore.getState().drawings;
+  let activeKey = getActiveDrawingKey();
+  let prevDrawings = useDrawingStoreRaw.getState().drawingsByKey[activeKey] ?? [];
   let prevIndicators = useIndicatorStore.getState().instances;
 
-  useDrawingStore.subscribe((s) => {
-    if (s.drawings === prevDrawings) return;
+  useDrawingStoreRaw.subscribe((s) => {
+    const key = getActiveDrawingKey();
+    if (key !== activeKey) {
+      // Active panel/key changed — resync the baseline instead of recording
+      // a diff across two unrelated charts' drawing sets.
+      activeKey = key;
+      prevDrawings = s.drawingsByKey[key] ?? [];
+      return;
+    }
+    const cur = s.drawingsByKey[key] ?? [];
+    if (cur === prevDrawings) return;
     const before = prevDrawings;
-    prevDrawings = s.drawings;
+    prevDrawings = cur;
     if (!useHistoryStore.getState().restoring) {
       useHistoryStore.getState().record({ drawings: before, indicators: prevIndicators });
     }

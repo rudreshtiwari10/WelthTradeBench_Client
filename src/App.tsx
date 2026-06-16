@@ -17,10 +17,12 @@ import { useUiStore } from './state/uiStore';
 import { initHistoryTracking } from './state/historyStore';
 import { useAuthStore } from './state/authStore';
 import { useLayoutStore } from './state/layoutStore';
+import { fetchWorkspace, initWorkspaceAutosave } from './state/workspaceSync';
 import { useEffect, useRef } from 'react';
 import './App.css';
 
 initHistoryTracking();
+initWorkspaceAutosave();
 
 export default function App() {
   useShortcuts();
@@ -51,6 +53,7 @@ export default function App() {
     if (!idChanged && !approvalChanged) return;
 
     if (authUser && authUser.approved) {
+      fetchWorkspace();
       useLayoutStore.getState().fetchLayouts();
     } else if (prev.id !== null && currentId === null) {
       useLayoutStore.getState().clearForLogout();

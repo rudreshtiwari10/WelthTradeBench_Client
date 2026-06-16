@@ -3,7 +3,26 @@ import {
   type ISeriesApi, type IChartApi, type SeriesType,
 } from 'lightweight-charts';
 import type { Candle, ChartType } from '../data/types';
-import { candleColors, volumeColors } from './theme';
+import { volumeColors } from './theme';
+import { useSettingsStore } from '../state/settingsStore';
+
+/**
+ * Reads the user's current candle-color settings (instead of a hardcoded theme
+ * default) so newly created series — e.g. after switching symbol/timeframe,
+ * which destroys and recreates the price series — always pick up whatever
+ * colors the user has configured, not the library default.
+ */
+function liveCandleColors() {
+  const s = useSettingsStore.getState();
+  return {
+    upColor: s.upColor,
+    downColor: s.downColor,
+    borderUpColor: s.upColor,
+    borderDownColor: s.downColor,
+    wickUpColor: s.wickVisible ? s.upColor : 'rgba(0,0,0,0)',
+    wickDownColor: s.wickVisible ? s.downColor : 'rgba(0,0,0,0)',
+  };
+}
 
 export type PriceSeries = ISeriesApi<SeriesType>;
 
@@ -26,6 +45,8 @@ export function heikinAshi(candles: Candle[]): Candle[] {
 
 /** Create the price series matching the chart type, in pane 0. */
 export function createPriceSeries(chart: IChartApi, type: ChartType): PriceSeries {
+  const candleColors = liveCandleColors();
+  const borderVisible = useSettingsStore.getState().borderVisible;
   switch (type) {
     case 'bars':
       return chart.addSeries(BarSeries, { upColor: candleColors.upColor, downColor: candleColors.downColor, thinBars: false });
@@ -51,7 +72,7 @@ export function createPriceSeries(chart: IChartApi, type: ChartType): PriceSerie
     case 'candles':
     case 'heikin':
     default:
-      return chart.addSeries(CandlestickSeries, { ...candleColors, borderVisible: false });
+      return chart.addSeries(CandlestickSeries, { ...candleColors, borderVisible });
   }
 }
 
@@ -69,7 +90,11 @@ export function priceData(candles: Candle[], type: ChartType) {
         value: c.close,
         color: c.close >= c.open ? volumeColors.up : volumeColors.down,
       }));
-    case 'hollow':
+    case 'hollow': {
+      // Hollow candle colors are baked per-bar into the data (the library lets
+      // per-bar color/borderColor/wickColor override series-level options), so
+      // they must be read live here too, not just at series-creation time.
+      const candleColors = liveCandleColors();
       return src.map((c) => {
         const up = c.close >= c.open;
         return {
@@ -79,6 +104,7 @@ export function priceData(candles: Candle[], type: ChartType) {
           wickColor: up ? candleColors.upColor : candleColors.downColor,
         };
       });
+    }
     case 'bars':
     case 'candles':
     case 'heikin':
