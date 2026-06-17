@@ -72,6 +72,27 @@ const INITIAL_COUNT: Record<string, number> = {
 const PAGE_COUNT = 750;                 // candles fetched per lazy-load page
 const LAZY_LOAD_THRESHOLD = 10;         // trigger when fewer than N bars remain left of view
 
+// Initial VIEW window (calendar days) per interval. On load the chart zooms to
+// this recent window instead of fitting all the fetched history — older data is
+// still loaded, so the user can scroll back / zoom out instantly to see it.
+const DEFAULT_VIEW_DAYS: Record<string, number> = {
+  '1m': 2, '3m': 3, '5m': 5, '15m': 10, '30m': 15,
+  '1H': 30, '2H': 60, '4H': 90,
+  '1D': 30, '1W': 365, '1M': 1825,
+};
+
+// Zoom the time scale to the most-recent DEFAULT_VIEW_DAYS[interval] of candles.
+export function applyInitialView(chart: IChartApi, candles: Candle[], interval: string) {
+  const len = candles.length;
+  if (!len) return;
+  const days = DEFAULT_VIEW_DAYS[interval] ?? 30;
+  const cutoffSec = Date.now() / 1000 - days * 86400;
+  const idx = candles.findIndex((c) => c.time >= cutoffSec);
+  let bars = idx >= 0 ? len - idx : len;
+  bars = Math.max(2, Math.min(bars, len));
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, len - bars), to: len + 4 } as any);
+}
+
 const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtVol = (n: number) =>
   n >= 1e7 ? (n / 1e7).toFixed(2) + 'Cr' : n >= 1e5 ? (n / 1e5).toFixed(2) + 'L' : n.toLocaleString('en-IN');
@@ -279,7 +300,8 @@ export function ChartView() {
         priceSeries.setData(priceData(candles, chartType) as any);
         volSeriesRef.current!.setData(volumeData(candles) as any);
 
-        // Restore panned viewport, or default to fitting all content.
+        // Restore panned viewport, or default to a recent zoomed-in window
+        // (not all of history — older data stays loaded for scroll-back/zoom-out).
         const saved = savedViewRef.current;
         if (saved) {
           savedViewRef.current = null;
@@ -290,10 +312,10 @@ export function ChartView() {
           if (newTo > 0 && newFrom < newTo) {
             chart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
           } else {
-            chart.timeScale().fitContent();
+            applyInitialView(chart, candles, interval);
           }
         } else {
-          chart.timeScale().fitContent();
+          applyInitialView(chart, candles, interval);
         }
         const last = candles[candles.length - 1];
         const prev = candles[candles.length - 2];

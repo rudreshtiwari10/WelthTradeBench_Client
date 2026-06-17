@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, HistogramSeries, type IChartApi, type ISeriesApi, type SeriesType } from 'lightweight-charts';
 import { chartOptions, chartThemeOptions } from './theme';
 import { createPriceSeries, priceData, volumeData, type PriceSeries } from './series';
+import { applyInitialView } from './ChartView';
 import { fetchHistory, liveFeed } from '../data/dataService';
 import { useUiStore } from '../state/uiStore';
 import { TradeButtons } from '../components/TradeButtons';
@@ -54,7 +55,7 @@ export function SecondaryChart({ panel, onActivate }: { panel: Panel; onActivate
       candlesRef.current = res.candles;
       ps.setData(priceData(res.candles, panel.chartType) as any);
       volRef.current!.setData(volumeData(res.candles) as any);
-      chart.timeScale().fitContent();
+      applyInitialView(chart, res.candles, panel.interval);
       setLast(res.candles[res.candles.length - 1]?.close ?? null);
     })();
     return () => { cancelled = true; };
