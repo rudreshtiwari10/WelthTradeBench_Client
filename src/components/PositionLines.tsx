@@ -174,8 +174,10 @@ export function PositionLines() {
         const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
         const maxLots = line.lots ?? 1;
         const exitLots = line.exitQty ?? maxLots;
-        
-        if (exitLots <= 0 || exitLots > maxLots) {
+
+        // Only validate lot range for options/futures (where lots is defined).
+        // For equity, lots is undefined and we use line.qty directly.
+        if (line.lots && line.lots > 0 && (exitLots <= 0 || exitLots > maxLots)) {
           pushToast(`Trigger ignored for ${line.symbol}: invalid exit qty (${exitLots}L)`);
           continue;
         }
@@ -184,9 +186,11 @@ export function PositionLines() {
           `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`
         );
 
-        // Exit order qty
-        const lotSz = line.lots && line.lots > 0 ? line.qty / line.lots : 1;
-        const exitQtyUnits = Math.round(exitLots * lotSz);
+        // For options/futures (lots defined): lots × lotSize gives units to trade.
+        // For equity (lots undefined): use the position qty directly.
+        const exitQtyUnits = line.lots && line.lots > 0
+          ? Math.round(exitLots * (line.qty / line.lots))
+          : line.qty;
 
         const state = useBrokerStore.getState();
         if (state.source !== 'paper') {

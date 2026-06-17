@@ -20,7 +20,7 @@ import { useSlTpPopupStore } from '../state/slTpPopupStore';
 import { useToastStore } from '../state/toastStore';
 import type { BrokerPosition } from '../data/brokerService';
 import { liveFeed } from '../data/dataService';
-import { optionPremium } from '../data/options';
+import { optionPremium, lotSize } from '../data/options';
 import './ChartWidgets.css';
 
 // ─── Persistence helpers ──────────────────────────────────────────────────
@@ -486,9 +486,9 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
   const pnl   = p.unrealised_profit ?? 0;
   const pnlUp = pnl >= 0;
 
-  const allLines   = usePriceLinesStore((s) => s.lines);
-  const addLines   = usePriceLinesStore((s) => s.addEntryWithSlTp);
-  const parsed     = parseKiteSymbol(p.trading_symbol);  // never null
+  const allLines  = usePriceLinesStore((s) => s.lines);
+  const addLines  = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const parsed    = parseKiteSymbol(p.trading_symbol);  // never null
 
   // Derive kind-specific fields once (avoids repeated type-narrowing casts)
   const isOption  = parsed.kind === 'option';
@@ -517,6 +517,11 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
   const entryPrice = entryLine?.entryPrice ?? p.average_price ?? 0;
   const optType    = entryLine?.optType ?? posOptType;
 
+  // lot count for options/futures; undefined for equity (1 share = no lot concept)
+  const lotsCount = (isOption || isFuture)
+    ? Math.max(1, Math.round(Math.abs(qty) / lotSize(posUnderlying)))
+    : undefined;
+
   // Create chart lines on demand for positions not placed through this app
   const ensureLines = (): string => {
     if (posId) return posId;
@@ -531,6 +536,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
         underlying: posUnderlying,   // equity: trading_symbol; options/futures: index name
         side,
         qty: Math.abs(qty),
+        lots: lotsCount,             // drives correct exit qty in SL/TP trigger
         price: entryPrice,
         entryPrice,
         strike: posStrike,
@@ -564,17 +570,17 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
     });
   };
 
-  // EXIT → open a LIMIT order popup (instead of instant market order)
+  // EXIT → open LIMIT price popup; chart lines auto-clear once broker position becomes flat
   const promptExit = () => {
     if (qty === 0) return;
     const pid = ensureLines();
     const txType: 'BUY' | 'SELL' = qty > 0 ? 'SELL' : 'BUY';
     const product: 'D' | 'I' = p.product?.toUpperCase() === 'MIS' ? 'I' : 'D';
     const ltp = p.last_price ?? entryPrice;
-
     const expiryStr = posExpiry
       ? new Date(posExpiry).toISOString().split('T')[0]
       : undefined;
+
     let exitOrder: import('../state/slTpPopupStore').ExitLimitOrder;
     if (isOption) {
       exitOrder = {
@@ -631,7 +637,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
         >TP</button>
         <button
           className="pos-exit-btn"
-          title={canExit ? 'Place LIMIT exit order & show on chart' : 'Position is already flat (qty = 0)'}
+          title={canExit ? 'Place LIMIT exit order' : 'Position is already flat (qty = 0)'}
           disabled={!canExit}
           onClick={promptExit}
         >EXIT</button>
@@ -738,6 +744,36 @@ function PositionsTerminal({ source, sandbox }: { source: string; sandbox: boole
   }, [clearPaper, removeLines]);
 
   const isLive = source !== 'paper';
+
+  // Auto-cleanup: remove chart lines whose broker position is now flat (qty=0) or gone.
+  // Runs on every broker refresh. Paper-position lines are identified by their positionId
+  // being present in paperPositions and are intentionally skipped.
+  useEffect(() => {
+    if (!isLive || brokerPositions.length === 0) return;
+
+    const paperIds = new Set(paperPositions.map((p) => p.id));
+    const entryLines = usePriceLinesStore.getState().lines.filter((l) => l.type === 'entry');
+
+    entryLines.forEach((el) => {
+      if (paperIds.has(el.positionId)) return; // skip paper positions
+
+      const stillOpen = brokerPositions.some((p) => {
+        if (p.quantity === 0) return false;
+        // match by full option/equity trading symbol
+        if (p.trading_symbol === el.symbol) return true;
+        if (p.trading_symbol === el.underlying) return true;
+        // kite_<instrument_token|tradingsymbol> format (from BrokerPosRow.ensureLines)
+        if (el.positionId.startsWith('kite_')) {
+          const token = el.positionId.slice(5);
+          return String(p.instrument_token) === token || p.trading_symbol === token;
+        }
+        return false;
+      });
+
+      if (!stillOpen) removeLines(el.positionId);
+    });
+  }, [brokerPositions, isLive, removeLines, paperPositions]);
+
   // Kite's net positions include flat (qty=0) rows — filter those out
   const openBrokerPositions = brokerPositions.filter((p) => p.quantity !== 0);
   // Always count both broker + paper so the badge reflects reality.

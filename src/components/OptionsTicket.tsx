@@ -131,9 +131,8 @@ export function OptionsTicket() {
   // Kite: defaults to LIVE when authenticated. Upstox/paper: defaults to PAPER.
   const [orderMode, setOrderMode] = useState<'paper' | 'live'>('paper');
 
-  // Market protection (Kite only): send a LIMIT at LTP ±2% instead of a raw MARKET
-  // to avoid NSE rejections on options during volatile sessions. Default ON for Kite.
-  const [mktProtect, setMktProtect] = useState(true);
+  // Market protection (Kite only): send a LIMIT at LTP ±2% instead of a raw MARKET.
+  const [mktProtect, setMktProtect] = useState(false);
 
   // Equity-mode state
   const [eqShares, setEqShares] = useState(1);
@@ -160,7 +159,7 @@ export function OptionsTicket() {
     setEqShares(1);
     setEqExchange((trade.exchange as 'NSE' | 'BSE' | undefined) === 'BSE' ? 'BSE' : 'NSE');
     setOrderType('Market');
-    setMktProtect(true);
+    setMktProtect(false);
     // Auto-live if already authenticated when ticket opens
     const authed = useBrokerStore.getState().auth[activeBroker]?.authenticated;
     setOrderMode(authed ? 'live' : 'paper');
