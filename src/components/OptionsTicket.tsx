@@ -346,12 +346,14 @@ export function OptionsTicket() {
           side,
           qty,
           lots,
-          price,
-          entryPrice: price,
-          optType: type,
-          strike: effStrike,
-          expiryDate: exp ? exp.date.getTime() : undefined,
+          // SL/TP are index-level lines (the chart shows the underlying), so the
+          // entry reference is the index spot, not the option premium.
+          price: spot,
+          entryPrice: spot,
           optionEntryPremium: price,
+          strike: effStrike,
+          optType: type,
+          expiryDate: exp ? exp.date.getTime() : undefined,
           instrumentKey: instrumentKey ?? undefined,
         });
         close();
@@ -387,12 +389,12 @@ export function OptionsTicket() {
         side,
         qty,
         lots,
-        price,
-        entryPrice: price,
-        optType: type,
-        strike: effStrike,
-        expiryDate: exp ? exp.date.getTime() : undefined,
+        price: spot,
+        entryPrice: spot,
         optionEntryPremium: price,
+        strike: effStrike,
+        optType: type,
+        expiryDate: exp ? exp.date.getTime() : undefined,
       });
       close();
     }

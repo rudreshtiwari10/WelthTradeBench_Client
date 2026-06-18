@@ -1,6 +1,9 @@
 import { FIB_COLORS, FIB_LEVELS, EW_LABELS, type Drawing, type DStyle } from './types';
+import { renderAnchoredVwap, renderVolumeProfile, type RenderEnv } from './volumeTools';
+import { renderExtra, hitTestExtra, EXTRA_TYPES } from './extraTools';
 
 export interface Pt { x: number; y: number; }
+export type { RenderEnv } from './volumeTools';
 
 const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -8,7 +11,7 @@ function dash(ctx: CanvasRenderingContext2D, style: DStyle) {
   ctx.setLineDash(style.style === 'dashed' ? [6, 4] : style.style === 'dotted' ? [2, 3] : []);
 }
 
-function distToSeg(px: number, py: number, a: Pt, b: Pt): number {
+export function distToSeg(px: number, py: number, a: Pt, b: Pt): number {
   const dx = b.x - a.x, dy = b.y - a.y;
   const len2 = dx * dx + dy * dy || 1;
   let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
@@ -18,7 +21,7 @@ function distToSeg(px: number, py: number, a: Pt, b: Pt): number {
 }
 
 // Extend the segment a→b to the canvas bounds; `both` extends behind a too.
-function extend(a: Pt, b: Pt, w: number, h: number, both: boolean): [Pt, Pt] {
+export function extend(a: Pt, b: Pt, w: number, h: number, both: boolean): [Pt, Pt] {
   const dx = b.x - a.x, dy = b.y - a.y;
   const far = (w + h) * 2;
   const len = Math.hypot(dx, dy) || 1;
@@ -45,8 +48,18 @@ export function renderDrawing(
   w: number,
   h: number,
   prices: number[],
+  env?: RenderEnv,
 ) {
   const s = d.style;
+  // Data-driven tools render entirely from OHLCV; bail early if no env yet.
+  if (d.type === 'anchored_vwap' || d.type === 'fixed_vp' || d.type === 'anchored_vp') {
+    if (env) {
+      if (d.type === 'anchored_vwap') renderAnchoredVwap(ctx, d, env);
+      else renderVolumeProfile(ctx, d, env);
+    }
+    return;
+  }
+  if (EXTRA_TYPES.has(d.type)) { renderExtra(ctx, d, pts, w, h, prices, env); return; }
   ctx.save();
   if (s.opacity != null && s.opacity < 1) ctx.globalAlpha = s.opacity;
   ctx.strokeStyle = s.color;
@@ -108,8 +121,10 @@ export function renderDrawing(
     case 'pricerange': if (pts[1]) { const bars = Math.abs(Math.round((d.points[1]?.logical ?? 0) - (d.points[0]?.logical ?? 0))); renderPriceRange(ctx, pts[0], pts[1], prices, s, bars); } break;
     case 'flag': renderFlag(ctx, pts[0], s); break;
     case 'pricelabel': renderPriceLabel(ctx, pts[0], prices[0], s); break;
+    case 'highlighter':
     case 'brush':
     case 'polyline':
+      if (d.type === 'highlighter') { ctx.globalAlpha = (s.opacity ?? 1) * 0.35; ctx.lineWidth = (s.width || 2) * 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]); }
       if (pts.length > 1) {
         ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
         for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
@@ -142,6 +157,33 @@ export function renderDrawing(
       ctx.fillText(d.text || 'Text', pts[0].x + 4, pts[0].y);
       break;
   }
+
+  // Generic user text label for tools that don't render their own text.
+  // Lets any line/shape carry a label set from the settings dialog.
+  if (d.text && d.type !== 'text' && d.type !== 'callout' && d.type !== 'emoji' && pts.length) {
+    drawTextLabel(ctx, d, pts);
+  }
+
+  ctx.restore();
+}
+
+// Draw a multi-line text label centered on a drawing's anchor span.
+function drawTextLabel(ctx: CanvasRenderingContext2D, d: Drawing, pts: Pt[]) {
+  const s = d.style;
+  const anchor = pts.length > 1
+    ? { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+    : { x: pts[0].x, y: pts[0].y };
+  ctx.save();
+  ctx.globalAlpha = s.opacity != null && s.opacity < 1 ? s.opacity : 1;
+  ctx.setLineDash([]);
+  ctx.fillStyle = s.textColor || s.color;
+  ctx.font = `${s.fontSize || 14}px var(--font, sans-serif)`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = d.text!.split('\n');
+  const lh = (s.fontSize || 14) * 1.3;
+  const y0 = anchor.y - ((lines.length - 1) * lh) / 2;
+  lines.forEach((ln, i) => ctx.fillText(ln, anchor.x, y0 + i * lh));
   ctx.restore();
 }
 
@@ -508,6 +550,7 @@ export function renderHoverHighlight(
 
 // ── hit testing (screen space) ──────────────────────────────────────────
 export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boolean {
+  if (EXTRA_TYPES.has(d.type)) return hitTestExtra(d, pts, m, w, h);
   const tol = 6 + d.style.width;
   switch (d.type) {
     case 'trendline': case 'arrow': return pts[1] ? distToSeg(m.x, m.y, pts[0], pts[1]) < tol : false;
@@ -532,6 +575,14 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
       const rw = Math.max(...xs) - x, rh = Math.max(...ys) - y;
       return m.x >= x - tol && m.x <= x + rw + tol && m.y >= y - tol && m.y <= y + rh + tol;
     }
+    case 'fixed_vp': {
+      // Box spanning the two anchors (vertical extent unknown without OHLCV → use full height)
+      if (pts.length < 2) return false;
+      const xL = Math.min(pts[0].x, pts[1].x), xR = Math.max(pts[0].x, pts[1].x);
+      return m.x >= xL - tol && m.x <= xR + tol;
+    }
+    case 'anchored_vp': return m.x >= pts[0].x - tol;
+    case 'anchored_vwap': return m.x >= pts[0].x - tol && Math.abs(m.y - pts[0].y) < 40;
     case 'flag': case 'pricelabel': return Math.abs(m.x - pts[0].x) < 30 && m.y > pts[0].y - 30 && m.y < pts[0].y + 12;
     case 'ellipse': {
       if (!pts[1]) return false;
@@ -540,7 +591,7 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
       const v = ((m.x - cx) ** 2) / (rx * rx) + ((m.y - cy) ** 2) / (ry * ry);
       return v > 0.7 && v < 1.4;
     }
-    case 'brush': case 'polyline':
+    case 'highlighter': case 'brush': case 'polyline':
     case 'xabcd':
     case 'ew_impulse': case 'ew_correction': case 'ew_triangle': case 'ew_double': case 'ew_triple':
       { for (let i = 1; i < pts.length; i++) if (distToSeg(m.x, m.y, pts[i - 1], pts[i]) < tol) return true; return false; }

@@ -145,15 +145,15 @@ export function PositionLines() {
   // ── 3. SL / TP trigger — monitor live ticks ───────────────────────────
   const activeLinesRef = useRef(activeLines);
   activeLinesRef.current = activeLines;
-  const prevTickRef = useRef<number | null>(null);
+  // Positions whose SL/TP has already fired. Synchronous guard so a burst of
+  // ticks (Kite streams fast and the LTP jitters around the level) cannot fire
+  // the exit more than once before removeByPos lands on the next render.
+  const triggeredRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!currentSymbol) return;
     const unsub = liveFeed.subscribe(currentSymbol, (tick) => {
-      const ltp  = tick.ltp;
-      const prev = prevTickRef.current;
-      prevTickRef.current = ltp;
-      if (prev === null) return;
+      const ltp = tick.ltp;
 
       for (const line of activeLinesRef.current) {
         if (line.type === 'entry') continue;
@@ -163,24 +163,24 @@ export function PositionLines() {
         const triggerAbove = line.triggerAbove
           ?? (line.type === 'sl' ? line.side !== 'buy' : line.side === 'buy');
 
-        const hit = triggerAbove
-          ? (prev < line.price && ltp >= line.price)   // crossed UP through the line
-          : (prev > line.price && ltp <= line.price);  // crossed DOWN through the line
+        // Fire when price has REACHED or PASSED the level (not only on a live
+        // crossing) so gaps, reloads and already-breached levels still trigger.
+        const hit = triggerAbove ? ltp >= line.price : ltp <= line.price;
 
         if (!hit) continue;
+        if (triggeredRef.current.has(line.positionId)) continue;  // already exited
 
         const isSl   = line.type === 'sl';
         const pnlEst = estimatePnl(line);
         const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
         const maxLots = line.lots ?? 1;
-        const exitLots = line.exitQty ?? maxLots;
+        // Clamp instead of skipping — an SL must still fire even if the exit-qty
+        // field holds an out-of-range value (skipping let the trade run on).
+        const exitLots = Math.min(maxLots, Math.max(1, line.exitQty ?? maxLots));
 
-        // Only validate lot range for options/futures (where lots is defined).
-        // For equity, lots is undefined and we use line.qty directly.
-        if (line.lots && line.lots > 0 && (exitLots <= 0 || exitLots > maxLots)) {
-          pushToast(`Trigger ignored for ${line.symbol}: invalid exit qty (${exitLots}L)`);
-          continue;
-        }
+        // Lock this position synchronously, BEFORE the async order call, so the
+        // very next tick cannot place a duplicate exit order.
+        triggeredRef.current.add(line.positionId);
 
         pushToast(
           `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`
@@ -267,11 +267,23 @@ export function PositionLines() {
           removePosition(line.positionId);
         }
 
+        // Cancel any pending LIMIT exit order for this position. Otherwise the
+        // market exit flattens the position, but the still-open LIMIT order can
+        // fill later and open an opposite position (net ~2× the intended size).
+        const exitLine = activeLinesRef.current.find(
+          (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId,
+        );
+        if (exitLine?.exitOrderId) {
+          cancelBrokerOrder(exitLine.exitOrderId, exitLine.exitOrderReParams?.broker ?? state.activeBroker)
+            .then(() => pushToast(`Cancelled pending LIMIT exit: ${line.symbol}`))
+            .catch(() => pushToast(`Couldn't cancel LIMIT exit for ${line.symbol} — check Orders tab`));
+        }
+
         removeByPos(line.positionId);
         break;
       }
     });
-    return () => { unsub(); prevTickRef.current = null; };
+    return () => { unsub(); };
   }, [currentSymbol, removePosition, removeByPos, pushToast]);
 
   // ── 4. Drag handlers ─────────────────────────────────────────────────

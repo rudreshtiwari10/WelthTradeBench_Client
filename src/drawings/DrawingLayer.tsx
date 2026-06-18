@@ -16,6 +16,9 @@ const EW_TYPES = new Set<DrawingType>(['ew_impulse','ew_correction','ew_triangle
 const _ALL_TOOL_DEFS = TOOL_GROUPS.flatMap((g) => groupTools(g));
 const toolDefByType = (type: string) => _ALL_TOOL_DEFS.find((t) => t.tool === type);
 
+// Data-driven tools render from candle data rather than projected geometry.
+const DATA_TOOLS = new Set<DrawingType>(['anchored_vwap', 'fixed_vp', 'anchored_vp']);
+
 const CURSOR_TOOLS: Tool[] = ['cursor', 'dot', 'arrowcursor', 'eraser'];
 const isDrawTool = (t: Tool): t is DrawingType => !CURSOR_TOOLS.includes(t);
 
@@ -121,33 +124,53 @@ export function DrawingLayer() {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
 
+        // Env for data-driven tools (VWAP / volume profile) — candles + converters.
+        const env = { candles: candlesRef.current, toX, toY };
+
         if (!s.current.hidden) {
           const multiSet = new Set(s.current.multiSelected);
           const currentInterval = intervalRef.current;
           for (const d of s.current.drawings) {
-            if (d.hidden) continue;                    // ← per-drawing hide
-            // Timeframe visibility: if set, skip if current interval not included
-            if (d.timeframeVisibility?.length && !d.timeframeVisibility.includes(currentInterval)) continue;
-            const pts = d.points.map(project).filter(Boolean) as Pt[];
-            if (pts.length < d.points.length) continue;
-            // Hover highlight — subtle glow before the actual drawing
-            if (d.id === hoveredId.current && d.id !== s.current.selectedId) {
-              renderHoverHighlight(ctx, d, pts, w, h);
+            // Isolate each drawing: a throw in one renderer must never kill the
+            // whole rAF loop (which would make every drawing disappear).
+            try {
+              if (d.hidden) continue;                    // ← per-drawing hide
+              // Timeframe visibility: if set, skip if current interval not included
+              if (d.timeframeVisibility?.length && !d.timeframeVisibility.includes(currentInterval)) continue;
+              const pts = d.points.map(project).filter(Boolean) as Pt[];
+              // Data-driven tools (VWAP/volume profile) self-render from candles and
+              // stay valid even when an anchor scrolls off the price axis.
+              if (DATA_TOOLS.has(d.type)) {
+                renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price), env);
+                if (d.id === s.current.selectedId || multiSet.has(d.id)) drawHandles(ctx, pts, d.locked);
+                continue;
+              }
+              if (pts.length < d.points.length) continue;
+              // Hover highlight — subtle glow before the actual drawing
+              if (d.id === hoveredId.current && d.id !== s.current.selectedId) {
+                renderHoverHighlight(ctx, d, pts, w, h);
+              }
+              renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price), env);
+              const isSel = d.id === s.current.selectedId || multiSet.has(d.id);
+              if (isSel) drawHandles(ctx, pts, d.locked);
+            } catch (err) {
+              console.error('[DrawingLayer] render failed for', d.type, d.id, err);
             }
-            renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price));
-            const isSel = d.id === s.current.selectedId || multiSet.has(d.id);
-            if (isSel) drawHandles(ctx, pts, d.locked);
           }
         }
 
         // In-progress draft
         if (draft.current) {
-          const pts = [...draft.current.points];
-          if (cursorPt.current) pts.push(cursorPt.current);
-          const screen = pts.map(project).filter(Boolean) as Pt[];
-          if (screen.length >= 1) {
-            const tmp: Drawing = { id: 'draft', type: draft.current.type, points: pts, style: s.current.defaultStyle };
-            renderDrawing(ctx, tmp, screen, w, h, pts.map((p) => p.price));
+          try {
+            const pts = [...draft.current.points];
+            if (cursorPt.current) pts.push(cursorPt.current);
+            const screen = pts.map(project).filter(Boolean) as Pt[];
+            if (screen.length >= 1) {
+              const tmp: Drawing = { id: 'draft', type: draft.current.type, points: pts, style: s.current.defaultStyle };
+              renderDrawing(ctx, tmp, screen, w, h, pts.map((p) => p.price), env);
+            }
+          } catch (err) {
+            console.error('[DrawingLayer] draft render failed', err);
           }
         }
 
@@ -293,7 +316,7 @@ export function DrawingLayer() {
         return;
       }
 
-      if (tool === 'brush') { draft.current = { type: 'brush', points: [dp] }; return; }
+      if (tool === 'brush' || tool === 'highlighter') { draft.current = { type: tool, points: [dp] }; return; }
       if (!draft.current) draft.current = { type: tool, points: [dp] };
       else draft.current.points.push(dp);
       const need = POINT_COUNT[tool];
@@ -377,7 +400,7 @@ export function DrawingLayer() {
     }
 
     if (draft.current) {
-      if (draft.current.type === 'brush') draft.current.points.push(dp);
+      if (draft.current.type === 'brush' || draft.current.type === 'highlighter') draft.current.points.push(dp);
       else cursorPt.current = dp;
       return;
     }
@@ -408,7 +431,7 @@ export function DrawingLayer() {
   };
 
   const onPointerUp = () => {
-    if (draft.current?.type === 'brush' && draft.current.points.length > 1) finishDraft();
+    if ((draft.current?.type === 'brush' || draft.current?.type === 'highlighter') && draft.current.points.length > 1) finishDraft();
     drag.current = null;
   };
 

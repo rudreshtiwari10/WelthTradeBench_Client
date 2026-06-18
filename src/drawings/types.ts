@@ -34,6 +34,50 @@ export type DrawingType =
   | 'shortpos'
   | 'measure'
   | 'pricerange'
+  // ── Volume / data-driven tools (need OHLCV) ──────────────────────────
+  | 'anchored_vwap'  // 1 anchor → cumulative VWAP + σ bands to last bar
+  | 'fixed_vp'       // 2 anchors → volume profile over a fixed bar range
+  | 'anchored_vp'    // 1 anchor → volume profile from anchor to last bar
+  // ── Trend variants ───────────────────────────────────────────────────
+  | 'infoline'       // trendline + Δprice/%/bars label
+  | 'trendangle'     // trendline + angle in degrees
+  | 'crossline'      // horizontal + vertical line through one point
+  | 'regression'     // linear-regression channel + std-dev bands
+  | 'flatchannel'    // sloped line + horizontal parallel
+  | 'disjoint'       // two independent channel lines
+  | 'schiff'         // Schiff pitchfork
+  | 'modschiff'      // Modified Schiff pitchfork
+  | 'inside'         // Inside pitchfork
+  // ── Fib / Gann variants ──────────────────────────────────────────────
+  | 'fibchannel'     // parallel fib lines
+  | 'fibtimezone'    // vertical fib time lines from one anchor span
+  | 'fibtime'        // trend-based fib time
+  | 'fibfan'         // fib speed-resistance fan
+  | 'fibarcs'        // fib speed-resistance arcs
+  | 'fibcircles'     // concentric fib circles
+  | 'gannbox'        // gann box grid
+  | 'gannsquare'     // gann square + diagonals
+  // ── Patterns / cycles ────────────────────────────────────────────────
+  | 'cypher'         // X-A-B-C-D cypher pattern
+  | 'hns'            // head & shoulders
+  | 'abcd'           // ABCD pattern
+  | 'threedrives'    // three drives pattern
+  | 'cyclic'         // repeated equal-spaced vertical lines
+  | 'sine'           // sine wave
+  | 'timecycles'     // concentric time-cycle circles
+  // ── Forecast / projection / shapes ───────────────────────────────────
+  | 'forecast'       // 3-point forecast projection
+  | 'barpattern'     // copy real bars into a target box
+  | 'ghostfeed'      // synthetic candles in a box
+  | 'sector'         // angle pie slice
+  | 'daterange'      // bars/time-only measurer
+  | 'highlighter'    // thick translucent freehand
+  | 'circle'         // true circle (center + radius)
+  | 'rotrect'        // rotated rectangle
+  | 'arc'            // arc through 3 points
+  | 'curve'          // quadratic curve
+  | 'arrowup'        // up arrow marker
+  | 'arrowdown'      // down arrow marker
   // ── Elliott Wave dedicated types ─────────────────────────────────────
   | 'ew_impulse'    // 1-2-3-4-5  (6 points: 0→1→2→3→4→5)
   | 'ew_correction' // A-B-C      (4 points: 0→A→B→C)
@@ -55,6 +99,11 @@ export interface DStyle {
   extendLeft?: boolean;      // extend trendline/ray to left canvas edge
   extendRight?: boolean;     // extend trendline/ray to right canvas edge
   showPriceLabel?: boolean;  // show price tag on right axis
+  // ── Data-driven tool options (VWAP / volume profile) ─────────────────
+  vpRows?: number;           // volume-profile row count (default 24)
+  vwapBands?: boolean;       // draw ±1σ / ±2σ bands on anchored VWAP
+  upColor?: string;          // volume-profile bullish color
+  downColor?: string;        // volume-profile bearish color
 }
 
 export interface Drawing {
@@ -72,11 +121,20 @@ export interface Drawing {
 // How many anchor points each tool needs before it's complete.
 export const POINT_COUNT: Record<DrawingType, number> = {
   trendline: 2, ray: 2, extended: 2, arrow: 2, rect: 2, ellipse: 2, fib: 2,
-  measure: 2, callout: 2, pricerange: 2, gannfan: 2,
+  measure: 2, callout: 2, pricerange: 2, gannfan: 2, fixed_vp: 2,
+  anchored_vwap: 1, anchored_vp: 1,
   triangle: 3, fibext: 3, pitchfork: 3, pchannel: 3, longpos: 3, shortpos: 3,
   hline: 1, hray: 1, vline: 1, text: 1, flag: 1, pricelabel: 1, emoji: 1,
   brush: -1,    // freehand: ends on pointer-up
   polyline: -2, // multi-point: ends on double-click
+  // ── New tool point counts ──
+  infoline: 2, trendangle: 2, crossline: 1, regression: 2, flatchannel: 3,
+  disjoint: 4, schiff: 3, modschiff: 3, inside: 3,
+  fibchannel: 3, fibtimezone: 2, fibtime: 3, fibfan: 2, fibarcs: 2, fibcircles: 2,
+  gannbox: 2, gannsquare: 2,
+  cypher: 5, hns: 6, abcd: 4, threedrives: 6, cyclic: 2, sine: 2, timecycles: 2,
+  forecast: 3, barpattern: 2, ghostfeed: 2, sector: 3, daterange: 2,
+  highlighter: -1, circle: 2, rotrect: 3, arc: 3, curve: 3, arrowup: 1, arrowdown: 1,
   // Elliott Wave — fixed point counts (auto-finish when reached)
   ew_impulse:    6,  // start + 5 wave-end points
   ew_correction: 4,  // start + A + B + C

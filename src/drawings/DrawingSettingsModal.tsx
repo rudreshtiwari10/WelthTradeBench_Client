@@ -15,6 +15,7 @@ const TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1H', '2H', '4H', '1D', '1W'
 
 const LINE_TOOLS = new Set(['trendline', 'ray', 'extended', 'arrow', 'hline', 'hray']);
 const FILL_TOOLS = new Set(['rect', 'ellipse', 'triangle', 'pchannel', 'fib', 'longpos', 'shortpos']);
+const VP_TOOLS = new Set(['fixed_vp', 'anchored_vp']);
 
 interface Props {
   drawingId: string;
@@ -24,7 +25,7 @@ interface Props {
 export function DrawingSettingsModal({ drawingId, onClose }: Props) {
   const { drawings, setStyle, updateDrawing } = useDrawingStore();
   const d = drawings.find((x) => x.id === drawingId);
-  const [tab, setTab] = useState<'style' | 'coords' | 'visibility'>('style');
+  const [tab, setTab] = useState<'style' | 'text' | 'coords' | 'visibility'>('style');
 
   // Local editable copies of point values
   const [localPoints, setLocalPoints] = useState<DPoint[]>([]);
@@ -71,7 +72,7 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
 
         {/* Tabs */}
         <div className="dsm-tabs">
-          {(['style', 'coords', 'visibility'] as const).map((t) => (
+          {(['style', 'text', 'coords', 'visibility'] as const).map((t) => (
             <button key={t} className={`dsm-tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -184,6 +185,34 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
               </>
             )}
 
+            {/* Anchored VWAP options */}
+            {d.type === 'anchored_vwap' && (
+              <div className="dsm-row">
+                <label className="dsm-label">Std-dev bands</label>
+                <label className="dsm-check">
+                  <input
+                    type="checkbox"
+                    checked={!!s.vwapBands}
+                    onChange={(e) => patchStyle({ vwapBands: e.target.checked })}
+                  />
+                  Show ±1σ / ±2σ
+                </label>
+              </div>
+            )}
+
+            {/* Volume Profile options */}
+            {VP_TOOLS.has(d.type) && (
+              <div className="dsm-row">
+                <label className="dsm-label">Rows</label>
+                <input
+                  type="number" min="6" max="100" step="1"
+                  className="dsm-number"
+                  value={s.vpRows ?? 24}
+                  onChange={(e) => patchStyle({ vpRows: parseInt(e.target.value) || 24 })}
+                />
+              </div>
+            )}
+
             {/* Fill options for shape tools */}
             {FILL_TOOLS.has(d.type) && (
               <>
@@ -209,29 +238,69 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
               </>
             )}
 
-            {/* Text / font for text tools */}
-            {(d.type === 'text' || d.type === 'callout' || d.type === 'emoji') && (
-              <>
-                <div className="dsm-row">
-                  <label className="dsm-label">Font size</label>
-                  <input
-                    type="number" min="8" max="72" step="1"
-                    className="dsm-number"
-                    value={s.fontSize ?? 14}
-                    onChange={(e) => patchStyle({ fontSize: parseInt(e.target.value) || 14 })}
+          </div>
+        )}
+
+        {/* ── Text tab ── */}
+        {tab === 'text' && (
+          <div className="dsm-body">
+            {/* Name (shown in the object tree) */}
+            <div className="dsm-row">
+              <label className="dsm-label">Name</label>
+              <input
+                type="text"
+                className="dsm-text-input"
+                placeholder={toolLabel(d.type)}
+                value={d.name ?? ''}
+                onChange={(e) => updateDrawing(d.id, { name: e.target.value || undefined })}
+              />
+            </div>
+
+            {/* Text label drawn on the chart */}
+            <div className="dsm-row" style={{ alignItems: 'flex-start' }}>
+              <label className="dsm-label">Text</label>
+              <textarea
+                className="dsm-textarea"
+                rows={3}
+                placeholder="Add a label to this drawing…"
+                value={d.text ?? ''}
+                onChange={(e) => updateDrawing(d.id, { text: e.target.value || undefined })}
+              />
+            </div>
+
+            {/* Font size */}
+            <div className="dsm-row">
+              <label className="dsm-label">Font size</label>
+              <input
+                type="number" min="8" max="72" step="1"
+                className="dsm-number"
+                value={s.fontSize ?? 14}
+                onChange={(e) => patchStyle({ fontSize: parseInt(e.target.value) || 14 })}
+              />
+            </div>
+
+            {/* Text color */}
+            <div className="dsm-row">
+              <label className="dsm-label">Text color</label>
+              <div className="dsm-colors">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`dsm-swatch ${s.textColor === c ? 'active' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => patchStyle({ textColor: c })}
+                    title={c}
                   />
-                </div>
-                <div className="dsm-row">
-                  <label className="dsm-label">Text color</label>
-                  <input
-                    type="color"
-                    className="dsm-color-input"
-                    value={s.textColor?.startsWith('#') ? s.textColor : '#d1d4dc'}
-                    onChange={(e) => patchStyle({ textColor: e.target.value })}
-                  />
-                </div>
-              </>
-            )}
+                ))}
+                <input
+                  type="color"
+                  className="dsm-color-input"
+                  value={s.textColor?.startsWith('#') && s.textColor.length === 7 ? s.textColor : '#d1d4dc'}
+                  onChange={(e) => patchStyle({ textColor: e.target.value })}
+                  title="Custom color"
+                />
+              </div>
+            </div>
           </div>
         )}
 
