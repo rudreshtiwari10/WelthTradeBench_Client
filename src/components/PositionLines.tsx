@@ -69,10 +69,11 @@ export function PositionLines() {
   const removePosition = usePositionsStore((s) => s.remove);
   const pushToast      = useToastStore((s) => s.push);
 
-  const brokerSource = useBrokerStore((s) => s.source);
-  const activeBroker = useBrokerStore((s) => s.activeBroker);
-  const cancelOrder  = useBrokerStore((s) => s.cancelOrder);
-  const placeOrder   = useBrokerStore((s) => s.placeOrder);
+  const brokerSource  = useBrokerStore((s) => s.source);
+  const activeBroker  = useBrokerStore((s) => s.activeBroker);
+  const cancelOrder   = useBrokerStore((s) => s.cancelOrder);
+  const placeOrder    = useBrokerStore((s) => s.placeOrder);
+  const brokerOrders  = useBrokerStore((s) => s.orders);
 
   // Lines whose underlying matches the chart symbol
   const activeLines = allLines.filter((l) => l.underlying === currentSymbol);
@@ -148,7 +149,9 @@ export function PositionLines() {
   // Positions whose SL/TP has already fired. Synchronous guard so a burst of
   // ticks (Kite streams fast and the LTP jitters around the level) cannot fire
   // the exit more than once before removeByPos lands on the next render.
-  const triggeredRef = useRef<Set<string>>(new Set());
+  const triggeredRef        = useRef<Set<string>>(new Set());
+  // Tracks exitOrderIds we've already auto-cleaned to avoid double processing
+  const processedOrdersRef  = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!currentSymbol) return;
@@ -193,7 +196,31 @@ export function PositionLines() {
           : line.qty;
 
         const state = useBrokerStore.getState();
+
+        // Find any pending LIMIT exit order for this position
+        const limitExitLine = usePriceLinesStore.getState().lines.find(
+          (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId,
+        );
+
         if (state.source !== 'paper') {
+          // If the LIMIT exit order has already been filled by the broker, skip
+          // placing a MARKET exit — doing so would open an unwanted opposite position.
+          if (limitExitLine?.exitOrderId) {
+            const brokerOrds = useBrokerStore.getState().orders;
+            const exitOrd = brokerOrds.find(o => o.order_id === limitExitLine.exitOrderId);
+            if (exitOrd?.status === 'complete') {
+              pushToast(`${isSl ? 'SL' : 'TP'}: ${line.symbol} already exited via LIMIT order`);
+              removeByPos(line.positionId);
+              break;
+            }
+            // Cancel the pending LIMIT exit before the MARKET exit fires, so it
+            // doesn't fill later and open an opposite position.
+            cancelBrokerOrder(
+              limitExitLine.exitOrderId,
+              limitExitLine.exitOrderReParams?.broker ?? state.activeBroker,
+            ).catch(() => {});
+          }
+
           const expiryStr = line.expiryDate
             ? new Date(line.expiryDate).toISOString().split('T')[0]
             : undefined;
@@ -201,7 +228,6 @@ export function PositionLines() {
           let orderP: Promise<unknown> | null = null;
           if (state.activeBroker === 'kite') {
             if (line.underlying && expiryStr && line.strike && line.optType) {
-              // Option exit via instrument dump resolution
               orderP = state.placeOrder({
                 qty: exitQtyUnits,
                 transaction_type: txType,
@@ -214,7 +240,6 @@ export function PositionLines() {
                 option_type: line.optType,
               });
             } else if (line.underlying && expiryStr && !line.optType) {
-              // Future exit
               orderP = state.placeOrder({
                 qty: exitQtyUnits,
                 transaction_type: txType,
@@ -225,7 +250,6 @@ export function PositionLines() {
                 expiry: expiryStr,
               });
             } else if (line.underlying) {
-              // Equity exit — no dump lookup needed, use symbol directly
               orderP = state.placeOrder({
                 qty: exitQtyUnits,
                 transaction_type: txType,
@@ -236,7 +260,6 @@ export function PositionLines() {
               });
             }
           } else if (line.instrumentKey) {
-            // Upstox exit
             orderP = state.placeOrder({
               instrument_key: line.instrumentKey,
               qty: exitQtyUnits,
@@ -244,13 +267,6 @@ export function PositionLines() {
               order_type: 'MARKET',
               product: 'D',
             });
-          }
-          // Cancel any pending LIMIT exit order for this position before MARKET exit fills
-          const limitExitLine = usePriceLinesStore.getState().lines.find(
-            (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId
-          );
-          if (limitExitLine?.exitOrderId) {
-            cancelBrokerOrder(limitExitLine.exitOrderId, state.activeBroker).catch(() => {});
           }
 
           if (orderP) {
@@ -267,24 +283,40 @@ export function PositionLines() {
           removePosition(line.positionId);
         }
 
-        // Cancel any pending LIMIT exit order for this position. Otherwise the
-        // market exit flattens the position, but the still-open LIMIT order can
-        // fill later and open an opposite position (net ~2× the intended size).
-        const exitLine = activeLinesRef.current.find(
-          (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId,
-        );
-        if (exitLine?.exitOrderId) {
-          cancelBrokerOrder(exitLine.exitOrderId, exitLine.exitOrderReParams?.broker ?? state.activeBroker)
-            .then(() => pushToast(`Cancelled pending LIMIT exit: ${line.symbol}`))
-            .catch(() => pushToast(`Couldn't cancel LIMIT exit for ${line.symbol} — check Orders tab`));
-        }
-
         removeByPos(line.positionId);
         break;
       }
     });
     return () => { unsub(); };
   }, [currentSymbol, removePosition, removeByPos, pushToast]);
+
+  // ── 3b. Auto-cleanup: remove position lines when LIMIT exit orders fill ──
+  // The broker polls every 5 s; when an exit LIMIT order becomes "complete" or
+  // "cancelled/rejected" we clean up immediately so SL/TP cannot fire on a
+  // position that is already flat and open an unwanted opposite trade.
+  useEffect(() => {
+    if (!brokerOrders.length) return;
+    const ordersById = new Map(brokerOrders.map(o => [o.order_id, o]));
+
+    for (const line of allLines) {
+      if (line.type !== 'exit' || !line.exitOrderId) continue;
+      if (processedOrdersRef.current.has(line.exitOrderId)) continue;
+
+      const order = ordersById.get(line.exitOrderId);
+      if (!order) continue;
+
+      if (order.status === 'complete') {
+        processedOrdersRef.current.add(line.exitOrderId);
+        triggeredRef.current.add(line.positionId);  // guard: prevent SL/TP firing
+        removeByPos(line.positionId);
+        pushToast(`LIMIT exit filled: ${line.symbol}`);
+      } else if (order.status === 'cancelled' || order.status === 'rejected') {
+        processedOrdersRef.current.add(line.exitOrderId);
+        removeLine(line.id);  // remove just the exit line; keep SL/TP active
+        pushToast(`LIMIT exit ${order.status}: ${line.symbol} — SL/TP lines still active`);
+      }
+    }
+  }, [brokerOrders, allLines, removeByPos, removeLine, pushToast]);
 
   // ── 4. Drag handlers ─────────────────────────────────────────────────
   const onHandleMouseDown = useCallback((id: string, startPrice: number, e: React.MouseEvent) => {

@@ -259,8 +259,11 @@ export function OptionsTicket() {
                 exchange: eqExchange,
               }
             : {
-                // Upstox equity: use instrument_key from SymbolInfo
-                instrument_key: trade.instrumentKey ?? symbol,
+                // Upstox equity: send instrument_key only when it's a proper Upstox key
+                // (contains '|'). Otherwise pass undefined so the backend resolves it via
+                // the instruments list using `underlying`.
+                instrument_key: trade.instrumentKey?.includes('|') ? trade.instrumentKey : undefined,
+                underlying: symbol,
                 qty: eqShares,
                 transaction_type: side.toUpperCase() as 'BUY' | 'SELL',
                 order_type: orderType.toUpperCase() as 'MARKET' | 'LIMIT',
