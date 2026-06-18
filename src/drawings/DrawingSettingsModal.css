@@ -188,6 +188,31 @@
 }
 .dsm-number:focus { outline: none; border-color: var(--accent); }
 
+/* Text inputs */
+.dsm-text-input {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.dsm-text-input:focus { outline: none; border-color: var(--accent); }
+.dsm-textarea {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.4;
+}
+.dsm-textarea:focus { outline: none; border-color: var(--accent); }
+
 /* Coordinates */
 .dsm-coord-row {
   display: flex;
