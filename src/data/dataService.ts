@@ -1,7 +1,47 @@
 import type { Candle, Interval, SymbolInfo } from './types';
 import { syncTimeWithTick } from '../utils/timeSync';
+import { CRYPTO_SYMBOLS, BINANCE_INTERVALS } from '../crypto/symbols';
+import { binanceWs } from '../crypto/binanceWs';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+
+// ─── Binance data routing ─────────────────────────────────────────────────────
+
+const _cryptoMap = new Map(CRYPTO_SYMBOLS.map((s) => [s.binance, s]));
+
+function _isCrypto(symbol: string): boolean {
+  return _cryptoMap.has(symbol);
+}
+
+async function _fetchBinanceKlines(
+  symbol: string,
+  interval: Interval,
+  count: number,
+  beforeTs?: number,
+): Promise<HistoryResponse> {
+  const iv = BINANCE_INTERVALS[interval] ?? '1h';
+  let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${iv}&limit=${Math.min(count, 1000)}`;
+  if (beforeTs) url += `&endTime=${beforeTs * 1000 - 1}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Binance klines ${r.status}`);
+  const raw: [number, string, string, string, string, string][] = await r.json();
+  const info = _cryptoMap.get(symbol)!;
+  const candles: Candle[] = raw.map(([t, o, h, l, c, v]) => ({
+    time: Math.floor(t / 1000),
+    open: parseFloat(o),
+    high: parseFloat(h),
+    low: parseFloat(l),
+    close: parseFloat(c),
+    volume: parseFloat(v),
+  }));
+  return {
+    symbol,
+    interval,
+    source: 'mock', // reuses existing union; no backend involved
+    info: { symbol, name: info.display, exchange: 'Binance', kind: 'crypto' },
+    candles,
+  };
+}
 
 
 export interface HistoryResponse {
@@ -29,6 +69,7 @@ export async function fetchHistory(
   signal?: AbortSignal,
   beforeTs?: number,
 ): Promise<HistoryResponse> {
+  if (_isCrypto(symbol)) return _fetchBinanceKlines(symbol, interval, count, beforeTs);
   let url = `${API_BASE}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&count=${count}`;
   if (instrumentKey) url += `&instrument_key=${encodeURIComponent(instrumentKey)}`;
   if (beforeTs != null) url += `&before_ts=${Math.floor(beforeTs)}`;
@@ -174,6 +215,7 @@ class LiveFeed {
   }
 
   subscribe(symbol: string, handler: TickHandler): () => void {
+    if (_isCrypto(symbol)) return this._subscribeCrypto(symbol, handler);
     this.connect();
     if (!this.handlers.has(symbol)) this.handlers.set(symbol, new Set());
     this.handlers.get(symbol)!.add(handler);
@@ -190,6 +232,17 @@ class LiveFeed {
         this.send({ type: 'unsub', symbol });
       }
     };
+  }
+
+  private _subscribeCrypto(symbol: string, handler: TickHandler): () => void {
+    // Binance miniTicker gives the latest trade price every ~1s.
+    const stream = `${symbol.toLowerCase()}@miniTicker`;
+    return binanceWs.subscribe(stream, (data: unknown) => {
+      const d = data as { c?: string };
+      const ltp = parseFloat(d.c ?? '0');
+      if (!ltp) return;
+      handler({ type: 'tick', symbol, ltp, ts: Math.floor(Date.now() / 1000) });
+    });
   }
 
   /** Subscribe to real-time LTP ticks for specific option instrument keys. */

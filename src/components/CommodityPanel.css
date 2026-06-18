@@ -1,0 +1,271 @@
+/* ── Commodity Panel (MCX Futures) ─────────────────────────────────────── */
+
+.cp2-panel {
+  position: fixed;
+  bottom: 52px;
+  left: 64px;
+  width: 380px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  user-select: none;
+}
+
+.cp2-panel.cp2-collapsed {
+  width: 260px;
+}
+
+/* ── Header ── */
+.cp2-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cp2-hdr-left { display: flex; align-items: center; gap: 6px; }
+.cp2-hdr-right { display: flex; align-items: center; gap: 4px; }
+
+.cp2-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cp2-collapsed-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cp2-toggle, .cp2-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+}
+.cp2-toggle:hover, .cp2-close:hover { color: var(--text); }
+
+/* ── Commodity chips ── */
+.cp2-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cp2-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s;
+  min-width: 52px;
+}
+.cp2-chip:hover { background: var(--hover); color: var(--text); }
+.cp2-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.cp2-chip-label { font-size: 10px; font-weight: 700; line-height: 1.2; }
+.cp2-chip-price { font-size: 9px; font-variant-numeric: tabular-nums; opacity: 0.85; }
+.cp2-chip.active .cp2-chip-price { opacity: 1; }
+
+/* ── Body ── */
+.cp2-body {
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Live price row */
+.cp2-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.cp2-sym {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.cp2-unit {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+}
+.cp2-ltp {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.cp2-ltp-wait {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Expiry row */
+.cp2-expiry-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cp2-exp-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 38px;
+  flex-shrink: 0;
+}
+.cp2-exp-loading {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.cp2-exp-chips {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.cp2-exp-btn {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cp2-exp-btn:hover { background: var(--hover); color: var(--text); }
+.cp2-exp-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Lots row */
+.cp2-lots-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cp2-lots-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 28px;
+  flex-shrink: 0;
+}
+.cp2-lots-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cp2-lots-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--hover);
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.cp2-lots-btn:hover { background: var(--border-strong); }
+.cp2-lots-inp {
+  width: 40px;
+  height: 28px;
+  background: var(--bg);
+  border: none;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.cp2-val-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+}
+.cp2-qty-info, .cp2-val-info {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cp2-val-info { color: var(--text); }
+
+/* Order buttons */
+.cp2-order-row {
+  display: flex;
+  gap: 6px;
+}
+.cp2-buy-btn, .cp2-sell-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.02em;
+}
+.cp2-buy-btn {
+  background: var(--buy, #26a69a);
+  color: #fff;
+}
+.cp2-sell-btn {
+  background: var(--sell, #ef5350);
+  color: #fff;
+}
+.cp2-buy-btn:hover  { opacity: 0.88; }
+.cp2-sell-btn:hover { opacity: 0.88; }
+.cp2-buy-btn:disabled,
+.cp2-sell-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Status row */
+.cp2-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+.cp2-status-live {
+  font-size: 10px;
+  color: var(--green, #26a69a);
+}
+.cp2-status-paper {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.cp2-status-hint {
+  font-size: 10px;
+  color: var(--yellow, #e6a817);
+}

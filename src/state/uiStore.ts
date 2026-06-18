@@ -21,6 +21,9 @@ interface UiState {
   chainOpen: boolean;
   toggleChain: () => void;
   closeChain: () => void;
+  commodityOpen: boolean;
+  toggleCommodity: () => void;
+  closeCommodity: () => void;
   // Global symbol-search modal (opened via toolbar click or any printable keypress)
   searchOpen: boolean;
   searchInitialQuery: string;
@@ -55,6 +58,9 @@ export const useUiStore = create<UiState>((set) => ({
   chainOpen: false,
   toggleChain: () => set((s) => ({ chainOpen: !s.chainOpen })),
   closeChain: () => set({ chainOpen: false }),
+  commodityOpen: false,
+  toggleCommodity: () => set((s) => ({ commodityOpen: !s.commodityOpen })),
+  closeCommodity: () => set({ commodityOpen: false }),
   searchOpen: false,
   searchInitialQuery: '',
   openSearch: (q = '') => set({ searchOpen: true, searchInitialQuery: q }),

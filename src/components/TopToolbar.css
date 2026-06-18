@@ -88,6 +88,11 @@
   color: #000;
   font-weight: 700;
 }
+.pill-btn.crypto-active {
+  background: linear-gradient(135deg, #f7931a, #f0b90b);
+  color: #000;
+  font-weight: 700;
+}
 
 .publish-btn {
   height: 28px;

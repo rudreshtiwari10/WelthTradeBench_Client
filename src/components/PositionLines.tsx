@@ -245,6 +245,14 @@ export function PositionLines() {
               product: 'D',
             });
           }
+          // Cancel any pending LIMIT exit order for this position before MARKET exit fills
+          const limitExitLine = usePriceLinesStore.getState().lines.find(
+            (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId
+          );
+          if (limitExitLine?.exitOrderId) {
+            cancelBrokerOrder(limitExitLine.exitOrderId, state.activeBroker).catch(() => {});
+          }
+
           if (orderP) {
             orderP
               .then(() => pushToast(`Exit order sent: ${line.symbol} ${txType} ${exitQtyUnits}qty`))

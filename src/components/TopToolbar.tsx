@@ -17,6 +17,7 @@ import { usePanelsStore, type GridLayout } from '../state/panelsStore';
 import { useAuthStore } from '../state/authStore';
 import { AuthModal } from './AuthModal';
 import { AdminPanel } from './AdminPanel';
+import { useCryptoStore } from '../crypto/cryptoStore';
 import './TopToolbar.css';
 
 const LAYOUTS: { id: GridLayout; icon: 'fullscreen' | 'splitV' | 'splitH' | 'grid'; label: string }[] = [
@@ -33,7 +34,8 @@ const INTERVAL_SHORT: Record<string, string> = {
 
 export function TopToolbar() {
   const { symbol, interval, chartType, setInterval, setChartType, backtestMode, toggleBacktestMode } = useChartStore();
-  const { openIndicators, openSettings, theme, toggleTheme, setChartOnly, chainOpen, toggleChain } = useUiStore();
+  const { cryptoMode, toggleCryptoMode } = useCryptoStore();
+  const { openIndicators, openSettings, theme, toggleTheme, setChartOnly, chainOpen, toggleChain, commodityOpen, toggleCommodity } = useUiStore();
   const replay = useReplayStore();
   const autosave = useAutosaveStore();
   const addAlert = useAlertStore((s) => s.add);
@@ -181,6 +183,13 @@ export function TopToolbar() {
         >
           <span>Backtest</span>
         </button>
+        <button
+          className={`pill-btn${cryptoMode ? ' crypto-active' : ''}`}
+          title="Crypto & Metals — real-time Binance data + XM broker execution"
+          onClick={toggleCryptoMode}
+        >
+          <span>Crypto</span>
+        </button>
 
         <div className="sep" />
 
@@ -314,6 +323,11 @@ export function TopToolbar() {
           title="Options Chain — one-click trading"
           onClick={toggleChain}
         >⊞ Chain</button>
+        <button
+          className={`pill-btn ${commodityOpen ? 'strong' : 'outlined'}`}
+          title="MCX Commodity Futures — Gold, Silver, Crude, Nat Gas"
+          onClick={toggleCommodity}
+        >MCX</button>
         <button className="publish-btn" title="Publish">Publish</button>
 
         <div className="sep" />

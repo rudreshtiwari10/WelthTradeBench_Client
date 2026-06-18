@@ -15,6 +15,8 @@ function istMinutes(nowMs: number): { dayOfWeek: number; totalMinutes: number } 
  *  Everything else  — Mon-Fri  09:15 – 15:30 IST  (NSE/BSE equity, index, FO, options)
  */
 export function isMarketOpen(kind: string | undefined, nowMs: number = Date.now()): boolean {
+  if (kind === 'crypto') return true; // 24/7
+
   const { dayOfWeek, totalMinutes } = istMinutes(nowMs);
 
   if (dayOfWeek === 0 || dayOfWeek === 6) return false; // weekend

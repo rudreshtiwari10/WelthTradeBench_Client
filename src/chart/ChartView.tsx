@@ -491,7 +491,7 @@ export function ChartView() {
     // Using the wrong anchor shifts every bucket by 900 s.  For daily charts this
     // makes the live tick land at a different timestamp than the last historical bar
     // → a duplicate candle appears on the chart instead of updating in place.
-    const MOPEN_UTC = symbol.kind === 'commodity' ? 12600 : 13500;
+    const MOPEN_UTC = symbol.kind === 'crypto' ? 0 : symbol.kind === 'commodity' ? 12600 : 13500;
 
     const barTs = (tickTs: number): number => {
       const sec = INTERVAL_SEC[intervalRef.current] ?? 86400;
@@ -658,7 +658,7 @@ export function ChartView() {
         />
 
         <IndicatorLegend />
-        <TradeButtons symbol={symbol.symbol} kind={symbol.kind} instrumentKey={symbol.instrumentKey} exchange={symbol.exchange} />
+        {symbol.kind !== 'crypto' && <TradeButtons symbol={symbol.symbol} kind={symbol.kind} instrumentKey={symbol.instrumentKey} exchange={symbol.exchange} />}
         {ready && <IndicatorsRenderer />}
         {ready && <CompareRenderer />}
         {ready && <AlertsRenderer />}

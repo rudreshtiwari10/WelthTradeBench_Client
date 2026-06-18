@@ -7,6 +7,7 @@ import { IndicatorsDialog } from './components/IndicatorsDialog';
 import { ChartSettingsDialog } from './components/ChartSettingsDialog';
 import { OptionsTicket } from './components/OptionsTicket';
 import { OptionsChainPanel } from './components/OptionsChainPanel';
+import { CommodityPanel } from './components/CommodityPanel';
 import { SymbolSearch } from './components/SymbolSearch';
 import { ToastHost } from './components/Toast';
 import { AutosaveWorker } from './components/AutosaveWorker';
@@ -18,6 +19,8 @@ import { initHistoryTracking } from './state/historyStore';
 import { useAuthStore } from './state/authStore';
 import { useLayoutStore } from './state/layoutStore';
 import { fetchWorkspace, initWorkspaceAutosave } from './state/workspaceSync';
+import { CryptoPanel } from './crypto/CryptoPanel';
+import { useCryptoStore } from './crypto/cryptoStore';
 import { useEffect, useRef } from 'react';
 import './App.css';
 
@@ -26,10 +29,12 @@ initWorkspaceAutosave();
 
 export default function App() {
   useShortcuts();
+  const cryptoMode = useCryptoStore((s) => s.cryptoMode);
   const theme        = useUiStore((s) => s.theme);
   const chartOnly    = useUiStore((s) => s.chartOnly);
   const setChartOnly = useUiStore((s) => s.setChartOnly);
-  const chainOpen    = useUiStore((s) => s.chainOpen);
+  const chainOpen       = useUiStore((s) => s.chainOpen);
+  const commodityOpen   = useUiStore((s) => s.commodityOpen);
   const searchOpen         = useUiStore((s) => s.searchOpen);
   const searchInitialQuery = useUiStore((s) => s.searchInitialQuery);
   const closeSearch        = useUiStore((s) => s.closeSearch);
@@ -110,7 +115,9 @@ export default function App() {
       <ChartSettingsDialog />
       <OptionsTicket />
       {chainOpen && <OptionsChainPanel />}
+      {commodityOpen && <CommodityPanel />}
       {searchOpen && <SymbolSearch onClose={closeSearch} initialQuery={searchInitialQuery} />}
+      {cryptoMode && <CryptoPanel />}
       <ToastHost />
     </div>
   );

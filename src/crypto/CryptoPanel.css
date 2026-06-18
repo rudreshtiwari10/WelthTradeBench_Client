@@ -1,0 +1,375 @@
+/* ── Crypto Panel Overlay ────────────────────────────────────────────────────── */
+
+.cp-overlay {
+  position: fixed;
+  top: var(--topbar-h, 46px);  /* sit below TopToolbar so interval/symbol controls work */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #0d1117);
+  color: var(--text, #e6edf3);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ── Body layout ─────────────────────────────────────────────────────────────── */
+
+.cp-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Watchlist ───────────────────────────────────────────────────────────────── */
+
+.cp-watchlist {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #161b22);
+  border-right: 1px solid var(--border, #21262d);
+  overflow-y: auto;
+}
+
+.cp-wl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted, #8b949e);
+  border-bottom: 1px solid var(--border, #21262d);
+  flex-shrink: 0;
+}
+
+.cp-wl-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border, #21262d);
+  text-align: left;
+  transition: background 0.1s;
+  width: 100%;
+}
+.cp-wl-item:hover { background: var(--hover, rgba(255,255,255,0.04)); }
+.cp-wl-item.active { background: var(--active, rgba(31,111,235,0.1)); border-left: 2px solid var(--accent, #1f6feb); }
+
+.cp-wl-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong, #e6edf3);
+}
+.cp-wl-sub {
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+}
+.cp-wl-right {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+.cp-wl-price {
+  font-size: 12px;
+  color: var(--text-strong, #e6edf3);
+  font-variant-numeric: tabular-nums;
+}
+.cp-wl-chg {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cp-wl-chg.up   { color: var(--green, #3fb950); }
+.cp-wl-chg.down { color: var(--red, #f85149); }
+
+/* ── Chart wrapper — hosts the existing ChartArea ───────────────────────────── */
+
+.cp-chart-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ChartArea's .chart-grid already uses flex:1; just ensure the host fills */
+.cp-chart-wrapper .chart-grid {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Order panel ─────────────────────────────────────────────────────────────── */
+
+.cp-order-panel {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel, #161b22);
+  border-left: 1px solid var(--border, #21262d);
+  overflow-y: auto;
+}
+
+.cp-account-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #21262d);
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.cp-acct-name {
+  font-size: 12px;
+  color: var(--text-strong, #e6edf3);
+  font-weight: 600;
+  flex: 1;
+}
+.cp-acct-bal {
+  font-size: 12px;
+  color: var(--green, #3fb950);
+  font-variant-numeric: tabular-nums;
+}
+.cp-acct-logout {
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.cp-acct-logout:hover { color: var(--red, #f85149); }
+
+.cp-side-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.cp-side-btn {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong, #30363d);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.cp-side-btn.buy  { color: var(--green, #3fb950); }
+.cp-side-btn.sell { color: var(--red, #f85149); }
+.cp-side-btn.buy.active  { background: rgba(63,185,80,0.15); border-color: var(--green, #3fb950); }
+.cp-side-btn.sell.active { background: rgba(248,81,73,0.15);  border-color: var(--red, #f85149); }
+
+.cp-type-row {
+  display: flex;
+  gap: 4px;
+}
+.cp-type-btn {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong, #30363d);
+  background: transparent;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.cp-type-btn:hover { background: var(--hover, rgba(255,255,255,0.04)); color: var(--text-strong, #e6edf3); }
+.cp-type-btn.active { background: var(--hover, rgba(255,255,255,0.06)); border-color: var(--accent, #1f6feb); color: #79c0ff; }
+
+.cp-symbol-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+.cp-sym-label { font-size: 13px; font-weight: 600; color: var(--text-strong, #e6edf3); }
+.cp-sym-ltp   { font-size: 13px; color: var(--accent, #58a6ff); font-variant-numeric: tabular-nums; }
+
+.cp-label {
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  margin-bottom: -4px;
+  display: block;
+}
+
+.cp-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong, #30363d);
+  background: var(--bg, #0d1117);
+  color: var(--text-strong, #e6edf3);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.cp-input:focus { border-color: var(--accent, #1f6feb); }
+.cp-input::placeholder { color: var(--text-dim, #484f58); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────────── */
+
+.cp-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.cp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-btn.primary  { background: var(--accent, #1f6feb); color: #fff; }
+.cp-btn.primary:hover:not(:disabled) { opacity: 0.85; }
+.cp-btn.secondary { background: var(--hover, #21262d); color: var(--text, #c9d1d9); border: 1px solid var(--border-strong, #30363d); }
+.cp-btn.secondary:hover:not(:disabled) { background: var(--border-strong, #30363d); }
+.cp-btn.buy  { background: #196c2e; color: #fff; }
+.cp-btn.buy:hover:not(:disabled)  { background: #238636; }
+.cp-btn.sell { background: #6e1c1c; color: #fff; }
+.cp-btn.sell:hover:not(:disabled) { background: #9e2a2a; }
+.cp-btn.full  { width: 100%; }
+.cp-btn.small { font-size: 12px; padding: 5px 12px; }
+
+/* ── Status ──────────────────────────────────────────────────────────────────── */
+
+.cp-msg {
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+  background: var(--hover, #21262d);
+  border: 1px solid var(--border-strong, #30363d);
+  border-radius: 6px;
+  padding: 6px 10px;
+  word-break: break-word;
+}
+
+.cp-error {
+  font-size: 12px;
+  color: var(--red, #f85149);
+  background: rgba(248,81,73,0.08);
+  border: 1px solid rgba(248,81,73,0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+/* ── Close button (in watchlist header) ──────────────────────────────────────── */
+
+.cp-close-btn {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong, #30363d);
+  background: transparent;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.cp-close-btn:hover { background: rgba(248,81,73,0.15); color: var(--red, #f85149); }
+
+/* ── Positions ───────────────────────────────────────────────────────────────── */
+
+.cp-positions {
+  border-top: 1px solid var(--border, #21262d);
+  padding-top: 8px;
+}
+.cp-pos-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted, #8b949e);
+  margin-bottom: 6px;
+}
+.cp-pos-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border, #21262d);
+  gap: 6px;
+}
+.cp-pos-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.cp-pos-side {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.cp-pos-side.buy  { background: rgba(63,185,80,0.15); color: var(--green, #3fb950); }
+.cp-pos-side.sell { background: rgba(248,81,73,0.15);  color: var(--red, #f85149); }
+.cp-pos-sym  { font-size: 11px; font-weight: 600; color: var(--text-strong, #e6edf3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-pos-vol  { font-size: 11px; color: var(--text-muted, #8b949e); flex-shrink: 0; }
+.cp-pos-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.cp-pos-pnl  { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-pos-pnl.up   { color: var(--green, #3fb950); }
+.cp-pos-pnl.down { color: var(--red, #f85149); }
+.cp-pos-close {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong, #30363d);
+  background: transparent;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+.cp-pos-close:hover { background: rgba(248,81,73,0.15); border-color: var(--red, #f85149); color: var(--red, #f85149); }
+
+/* ── Modal ───────────────────────────────────────────────────────────────────── */
+
+.cp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(0,0,0,0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-modal {
+  background: var(--panel, #161b22);
+  border: 1px solid var(--border-strong, #30363d);
+  border-radius: 12px;
+  padding: 24px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.cp-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong, #e6edf3);
+  margin-bottom: 4px;
+}
+.cp-modal-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}

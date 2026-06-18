@@ -348,6 +348,10 @@ export function OptionsTicket() {
           lots,
           price,
           entryPrice: price,
+          optType: type,
+          strike: effStrike,
+          expiryDate: exp ? exp.date.getTime() : undefined,
+          optionEntryPremium: price,
           instrumentKey: instrumentKey ?? undefined,
         });
         close();
@@ -376,7 +380,6 @@ export function OptionsTicket() {
         side, lots, qty, price,
       });
       pushToast(`${side === 'buy' ? 'Bought' : 'Sold'} ${lots} lot${lots > 1 ? 's' : ''} ${contract} @ ₹${price.toFixed(2)}`);
-      // Mark entry + auto-set default SL/TP on chart
       addPriceLines({
         positionId: posId,
         symbol: contract,
@@ -386,6 +389,10 @@ export function OptionsTicket() {
         lots,
         price,
         entryPrice: price,
+        optType: type,
+        strike: effStrike,
+        expiryDate: exp ? exp.date.getTime() : undefined,
+        optionEntryPremium: price,
       });
       close();
     }
