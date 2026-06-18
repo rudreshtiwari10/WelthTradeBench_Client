@@ -169,13 +169,33 @@ export function renderVolumeProfile(
       if (up) volUp[ri] += v; else volDn[ri] += v;
       continue;
     }
-    // distribute proportionally across overlapped rows
+    
+    // Body-vs-Wick Heuristic: weight candle body 4x higher than wicks
+    // to prevent volume dilution across large price moves.
+    const bodyMin = Math.min(c.open, c.close);
+    const bodyMax = Math.max(c.open, c.close);
+    const weights = new Array(ROWS).fill(0);
+    let totalWeight = 0;
+
     for (let r = 0; r < ROWS; r++) {
       const rLo = pMin + r * rowH, rHi = rLo + rowH;
       const ov = Math.max(0, Math.min(c.high, rHi) - Math.max(c.low, rLo));
       if (ov <= 0) continue;
-      const part = (ov / span) * v;
-      if (up) volUp[r] += part; else volDn[r] += part;
+
+      const bodyOv = Math.max(0, Math.min(bodyMax, rHi) - Math.max(bodyMin, rLo));
+      const wickOv = ov - bodyOv;
+
+      const w = (bodyOv * 4.0) + (wickOv * 1.0);
+      weights[r] = w;
+      totalWeight += w;
+    }
+
+    if (totalWeight > 0) {
+      for (let r = 0; r < ROWS; r++) {
+        if (weights[r] <= 0) continue;
+        const part = (weights[r] / totalWeight) * v;
+        if (up) volUp[r] += part; else volDn[r] += part;
+      }
     }
   }
 
@@ -208,9 +228,16 @@ export function renderVolumeProfile(
   // faint range box
   const yTop = toY(pMax), yBot = toY(pMin);
   if (yTop != null && yBot != null) {
-    ctx.strokeStyle = 'rgba(120,123,134,0.35)';
+    const boxY = Math.min(yTop, yBot);
+    const boxH = Math.abs(yBot - yTop);
+
+    // Semi-transparent background fill to match TradingView
+    ctx.fillStyle = 'rgba(41, 98, 255, 0.04)';
+    ctx.fillRect(boxL, boxY, boxW, boxH);
+
+    ctx.strokeStyle = 'rgba(120,123,134,0.2)';
     ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
-    ctx.strokeRect(boxL, Math.min(yTop, yBot), boxW, Math.abs(yBot - yTop));
+    ctx.strokeRect(boxL, boxY, boxW, boxH);
     ctx.setLineDash([]);
   }
 
