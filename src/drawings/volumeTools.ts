@@ -199,7 +199,7 @@ export function renderVolumeProfile(
   if (x0 == null || x1 == null) return;
   const boxL = Math.min(x0, x1), boxR = Math.max(x0, x1);
   const boxW = boxR - boxL;
-  // histogram grows from the right edge of the range, leftward
+  // histogram grows from the left edge of the range, rightward
   const maxBarW = Math.min(boxW * 0.32, 160);
   const upCol = s.upColor || 'rgba(38,166,154,0.55)';
   const dnCol = s.downColor || 'rgba(239,83,80,0.55)';
@@ -223,20 +223,23 @@ export function renderVolumeProfile(
     const wUp = (volUp[r] / maxVol) * maxBarW;
     const wDn = (volDn[r] / maxVol) * maxBarW;
     ctx.globalAlpha = inVA ? 1 : 0.5;
-    // stacked down (red) then up (green), anchored at right edge
-    ctx.fillStyle = dnCol; ctx.fillRect(boxR - wDn, top, wDn, barH);
-    ctx.fillStyle = upCol; ctx.fillRect(boxR - wDn - wUp, top, wUp, barH);
+    // stacked up (green) then down (red), anchored at left edge
+    ctx.fillStyle = upCol; ctx.fillRect(boxL, top, wUp, barH);
+    ctx.fillStyle = dnCol; ctx.fillRect(boxL + wUp, top, wDn, barH);
   }
   ctx.globalAlpha = 1;
 
   // POC line (orange) + VAH / VAL (blue) across the box
   const pocPrice = pMin + (pocRow + 0.5) * rowH;
   const yPoc = toY(pocPrice);
+  ctx.font = '10px sans-serif';
+  ctx.textBaseline = 'middle';
   if (yPoc != null) {
     ctx.strokeStyle = '#ff9800'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(boxL, yPoc); ctx.lineTo(boxR, yPoc); ctx.stroke();
-    ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ff9800';
-    ctx.fillText(`POC ${fmt(pocPrice)}`, boxL + 4, yPoc - 7);
+    ctx.fillStyle = '#ff9800';
+    ctx.textAlign = 'right';
+    ctx.fillText(`POC ${fmt(pocPrice)}`, boxR - 4, yPoc - 7);
   }
   const vah = pMin + (vaUp + 1) * rowH, val = pMin + vaDn * rowH;
   ctx.strokeStyle = 'rgba(41,98,255,0.7)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
@@ -244,8 +247,10 @@ export function renderVolumeProfile(
     const y = toY(p); if (y == null) continue;
     ctx.beginPath(); ctx.moveTo(boxL, y); ctx.lineTo(boxR, y); ctx.stroke();
     ctx.fillStyle = 'rgba(41,98,255,0.9)';
-    ctx.fillText(`${lbl} ${fmt(p)}`, boxL + 4, y - 7);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${lbl} ${fmt(p)}`, boxR - 4, y - 7);
   }
+  ctx.textAlign = 'left';
   ctx.setLineDash([]);
   ctx.restore();
 }
