@@ -976,44 +976,61 @@ function SlTpPopup() {
   const confirm = () => {
     if (!isValid) return;
     if (popup.exitOrder) {
-      // Live broker: place a single LIMIT order on the broker for exit / TP, or SL order for Stop Loss.
-      // The broker handles the fill automatically — no client-side MARKET order needed.
-      const orderType = isSl ? 'SL' : 'LIMIT';
-      placeOrder({
-        ...popup.exitOrder,
-        order_type: orderType,
-        price,
-        trigger_price: isSl ? price : undefined,
-      })
-        .then((result) => {
-          const reParams: import('../state/priceLinesStore').ExitOrderReParams = {
-            broker: activeBroker,
-            qty: popup.exitOrder!.qty,
-            transaction_type: popup.exitOrder!.transaction_type,
-            product: popup.exitOrder!.product,
-            segment: popup.exitOrder!.segment,
-            underlying: popup.exitOrder!.underlying,
-            expiry: popup.exitOrder!.expiry,
-            strike: popup.exitOrder!.strike,
-            option_type: popup.exitOrder!.option_type,
-            tradingsymbol: popup.exitOrder!.tradingsymbol,
-            exchange: popup.exitOrder!.exchange,
-          };
-          if (isExit) {
-            setExit(popup.posId, price, result.order_id, reParams);
-            pushToast(`LIMIT exit placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
-          } else if (isSl) {
-            setSl(popup.posId, price, result.order_id, reParams);
-            pushToast(`Stop Loss order placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
-          } else {
-            setTp(popup.posId, price, result.order_id, reParams);
-            pushToast(`LIMIT TP placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
-          }
+      const reParams: import('../state/priceLinesStore').ExitOrderReParams = {
+        broker: activeBroker,
+        qty: popup.exitOrder.qty,
+        transaction_type: popup.exitOrder.transaction_type,
+        product: popup.exitOrder.product,
+        segment: popup.exitOrder.segment,
+        underlying: popup.exitOrder.underlying,
+        expiry: popup.exitOrder.expiry,
+        strike: popup.exitOrder.strike,
+        option_type: popup.exitOrder.option_type,
+        tradingsymbol: popup.exitOrder.tradingsymbol,
+        exchange: popup.exitOrder.exchange,
+      };
+
+      if (popup.exitOrder.segment === 'option') {
+        // Options: SL/TP is set at an INDEX price level, not the option premium.
+        // Placing a LIMIT order at the index price on the option contract is invalid
+        // (Kite rejects "limit above/below price"). Instead, store the index level
+        // with reParams so the tick monitor can fire a MARKET exit when triggered.
+        if (isExit) {
+          setExit(popup.posId, price, undefined, reParams);
+          pushToast(`Exit set at index ₹${price.toFixed(2)} — will MARKET-exit ${popup.symbol} on trigger`);
+        } else if (isSl) {
+          setSl(popup.posId, price, undefined, reParams);
+          pushToast(`SL set at index ₹${price.toFixed(2)} — will MARKET-exit ${popup.symbol} on trigger`);
+        } else {
+          setTp(popup.posId, price, undefined, reParams);
+          pushToast(`TP set at index ₹${price.toFixed(2)} — will MARKET-exit ${popup.symbol} on trigger`);
+        }
+      } else {
+        // Equity / futures: place LIMIT or SL-M order directly on the broker.
+        const orderType = isSl ? 'SL' : 'LIMIT';
+        placeOrder({
+          ...popup.exitOrder,
+          order_type: orderType,
+          price,
+          trigger_price: isSl ? price : undefined,
         })
-        .catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          pushToast(`${orderType} order FAILED for ${popup.symbol}: ${msg}`);
-        });
+          .then((result) => {
+            if (isExit) {
+              setExit(popup.posId, price, result.order_id, reParams);
+              pushToast(`LIMIT exit placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
+            } else if (isSl) {
+              setSl(popup.posId, price, result.order_id, reParams);
+              pushToast(`Stop Loss order placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
+            } else {
+              setTp(popup.posId, price, result.order_id, reParams);
+              pushToast(`LIMIT TP placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
+            }
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            pushToast(`${orderType} order FAILED for ${popup.symbol}: ${msg}`);
+          });
+      }
     } else if (isSl) {
       // Paper mode: chart-only SL line
       setSl(popup.posId, price);

@@ -186,12 +186,25 @@ export function PositionLines() {
         const isLiveBroker = useBrokerStore.getState().source !== 'paper';
 
         if (isLiveBroker) {
-          // Live broker: SL/TP LIMIT orders are placed directly on the broker via the
-          // SL/TP/EXIT buttons. The broker handles the fill automatically.
-          // Never fire a client-side MARKET order here — it causes double-fills and
-          // creates unwanted opposite positions when a LIMIT order is also pending.
-          // The auto-cleanup in effect 3b removes position lines once the broker
-          // confirms the LIMIT order is filled.
+          const rp = line.exitOrderReParams;
+          if (rp && rp.segment === 'option') {
+            // Options: SL/TP is on the index axis — can't pre-place a LIMIT on the broker.
+            // Fire a MARKET order now that the index has actually crossed the level.
+            useBrokerStore.getState().placeOrder({
+              broker: rp.broker,
+              transaction_type: rp.transaction_type,
+              order_type: 'MARKET',
+              qty: rp.qty,
+              product: rp.product,
+              segment: 'option',
+              underlying: rp.underlying,
+              expiry: rp.expiry,
+              strike: rp.strike,
+              option_type: rp.option_type,
+            }).catch(() => {});
+          }
+          // For equity/futures with LIMIT orders: broker handles fill automatically;
+          // auto-cleanup in effect 3b removes lines once the order is confirmed filled.
         } else {
           // Paper mode: remove position immediately when SL/TP level is hit
           removePosition(line.positionId);
