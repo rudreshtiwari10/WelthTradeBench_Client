@@ -127,6 +127,7 @@ export function OptionsChainPanel() {
 
   const addPaperPos      = usePositionsStore((s) => s.add);
   const addLines         = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const addEntry         = usePriceLinesStore((s) => s.addEntry);
   const pushToast        = useToastStore((s) => s.push);
   const brokerSource     = useBrokerStore((s) => s.source);
   const brokerSandbox    = useBrokerStore((s) => s.sandbox);
@@ -396,7 +397,7 @@ export function OptionsChainPanel() {
         pushToast(`Paper ${side.toUpperCase()} ${lots}L ${contract} @ ₹${fmt2(ltp)} · View ${underlying} for SL/TP`);
       }
 
-      addLines({
+      (isLive ? addEntry : addLines)({
         positionId,
         symbol:             contract,
         underlying,

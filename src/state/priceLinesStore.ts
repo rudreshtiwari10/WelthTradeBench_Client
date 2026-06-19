@@ -90,8 +90,11 @@ const uid = () => `pl${seq++}_${Date.now()}`;
 interface PriceLinesState {
   lines: PositionLine[];
 
-  /** Create entry + default SL + default TP all at once. */
+  /** Create entry + default SL + default TP all at once (paper mode). */
   addEntryWithSlTp: (data: Omit<PositionLine, 'id' | 'type'>) => void;
+
+  /** Create entry line only — no automatic SL/TP (live broker mode). */
+  addEntry: (data: Omit<PositionLine, 'id' | 'type'>) => void;
 
   /** Upsert SL for a position. orderId/params are set when a LIMIT order is placed on the broker. */
   setSl: (positionId: string, price: number, orderId?: string, params?: ExitOrderReParams) => void;
@@ -149,6 +152,11 @@ export const usePriceLinesStore = create<PriceLinesState>((set, get) => ({
       { ...data, id: uid(), type: 'tp', price: tpPrice, triggerAbove: tpTriggerAbove },
     ];
     set((s) => { const lines = [...s.lines, ...newLines]; saveLines(lines); return { lines }; });
+  },
+
+  addEntry(data) {
+    const entry: PositionLine = { ...data, id: uid(), type: 'entry' };
+    set(s => { const lines = [...s.lines, entry]; saveLines(lines); return { lines }; });
   },
 
   setSl(positionId, price, orderId?, params?) {

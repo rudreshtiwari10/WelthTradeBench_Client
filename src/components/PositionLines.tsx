@@ -268,10 +268,13 @@ export function PositionLines() {
       const upd   = usePriceLinesStore.getState().updateExitOrder;
 
       const doPlace = () => {
+        const isSl = line.type === 'sl';
+        const orderType = isSl ? 'SL' : 'LIMIT';
         placeBrokerOrder({
           broker: exitOrderReParams.broker,
-          order_type: 'LIMIT',
+          order_type: orderType,
           price,
+          trigger_price: isSl ? price : undefined,
           qty: exitOrderReParams.qty,
           transaction_type: exitOrderReParams.transaction_type,
           product: exitOrderReParams.product,
@@ -286,12 +289,12 @@ export function PositionLines() {
         })
           .then((result) => {
             if (result.order_id) upd(lineId, result.order_id);
-            pushT(`LIMIT order moved: ${symbol} @ ₹${price.toFixed(2)}`);
+            pushT(`${orderType} order moved: ${symbol} @ ₹${price.toFixed(2)}`);
             // Refresh broker data
             useBrokerStore.getState().refresh();
           })
           .catch((err: unknown) => {
-            pushT(`Failed to re-place LIMIT exit: ${err instanceof Error ? err.message : String(err)}`);
+            pushT(`Failed to re-place ${orderType} order: ${err instanceof Error ? err.message : String(err)}`);
           });
       };
 

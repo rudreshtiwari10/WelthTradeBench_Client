@@ -537,7 +537,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
   const pnlUp = pnl >= 0;
 
   const allLines  = usePriceLinesStore((s) => s.lines);
-  const addLines  = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const addEntry  = usePriceLinesStore((s) => s.addEntry);
   const parsed    = parseKiteSymbol(p.trading_symbol);  // never null
 
   // Derive kind-specific fields once (avoids repeated type-narrowing casts)
@@ -588,7 +588,7 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
       l => l.positionId === newId && l.type === 'entry'
     );
     if (!already) {
-      addLines({
+      addEntry({
         positionId: newId,
         symbol: p.trading_symbol,
         underlying: posUnderlying,   // equity: trading_symbol; options/futures: index name
@@ -976,9 +976,15 @@ function SlTpPopup() {
   const confirm = () => {
     if (!isValid) return;
     if (popup.exitOrder) {
-      // Live broker: place a single LIMIT order on the broker for exit / SL / TP.
+      // Live broker: place a single LIMIT order on the broker for exit / TP, or SL order for Stop Loss.
       // The broker handles the fill automatically — no client-side MARKET order needed.
-      placeOrder({ ...popup.exitOrder, order_type: 'LIMIT', price })
+      const orderType = isSl ? 'SL' : 'LIMIT';
+      placeOrder({
+        ...popup.exitOrder,
+        order_type: orderType,
+        price,
+        trigger_price: isSl ? price : undefined,
+      })
         .then((result) => {
           const reParams: import('../state/priceLinesStore').ExitOrderReParams = {
             broker: activeBroker,
@@ -998,7 +1004,7 @@ function SlTpPopup() {
             pushToast(`LIMIT exit placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
           } else if (isSl) {
             setSl(popup.posId, price, result.order_id, reParams);
-            pushToast(`LIMIT SL placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
+            pushToast(`Stop Loss order placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
           } else {
             setTp(popup.posId, price, result.order_id, reParams);
             pushToast(`LIMIT TP placed: ${popup.symbol} @ ₹${price.toFixed(2)}`);
@@ -1006,7 +1012,7 @@ function SlTpPopup() {
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          pushToast(`LIMIT order FAILED for ${popup.symbol}: ${msg}`);
+          pushToast(`${orderType} order FAILED for ${popup.symbol}: ${msg}`);
         });
     } else if (isSl) {
       // Paper mode: chart-only SL line

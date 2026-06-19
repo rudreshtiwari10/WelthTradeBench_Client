@@ -112,6 +112,7 @@ export function CommodityPanel() {
 
   // ── Broker & store ────────────────────────────────────────────────────
   const addLines         = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const addEntry         = usePriceLinesStore((s) => s.addEntry);
   const pushToast        = useToastStore((s) => s.push);
   const brokerPlaceOrder = useBrokerStore((s) => s.placeOrder);
   const activeBroker     = useBrokerStore((s) => s.activeBroker);
@@ -199,7 +200,7 @@ export function CommodityPanel() {
         pushToast(`Paper ${txSide.toUpperCase()} ${lots}L ${selected.label} @ ₹${fmt(price)} · ${activeFut.expiryLabel}`);
       }
 
-      addLines({
+      (isLive ? addEntry : addLines)({
         positionId,
         symbol:     contract,
         underlying: selected.symbol,

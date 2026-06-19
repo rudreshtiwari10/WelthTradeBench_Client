@@ -68,6 +68,7 @@ export function OptionsTicket() {
   const brokerAuth = useBrokerStore((s) => s.auth);
   const initBroker = useBrokerStore((s) => s.init);
   const addPriceLines = usePriceLinesStore((s) => s.addEntryWithSlTp);
+  const addEntry      = usePriceLinesStore((s) => s.addEntry);
 
   const isLive = brokerSource !== 'paper';
   const isKite = activeBroker === 'kite';
@@ -276,7 +277,7 @@ export function OptionsTicket() {
         pushToast(
           `${label}${side === 'buy' ? 'Bought' : 'Sold'} ${eqShares} share${eqShares !== 1 ? 's' : ''} of ${symbol} @ ₹${spot.toFixed(2)}${result.order_id ? ` · Order ${result.order_id}` : ''}`
         );
-        addPriceLines({
+        addEntry({
           positionId: result.order_id ?? `live_${Date.now()}`,
           symbol, underlying: symbol, side,
           qty: eqShares, lots: eqShares, price: spot, entryPrice: spot,
@@ -342,15 +343,13 @@ export function OptionsTicket() {
         pushToast(
           `${label}${side === 'buy' ? 'Bought' : 'Sold'} ${lots} lot${lots > 1 ? 's' : ''} ${contract} @ ₹${price.toFixed(2)}${result.order_id ? ` · Order ${result.order_id}` : ''}`
         );
-        addPriceLines({
+        addEntry({
           positionId: posId,
           symbol: contract,
           underlying: symbol,
           side,
           qty,
           lots,
-          // SL/TP are index-level lines (the chart shows the underlying), so the
-          // entry reference is the index spot, not the option premium.
           price: spot,
           entryPrice: spot,
           optionEntryPremium: price,
