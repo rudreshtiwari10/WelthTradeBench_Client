@@ -56,9 +56,28 @@ export interface PositionLine {
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────
-const STORE_KEY = 'welthwest:priceLines';
+const STORE_KEY     = 'welthwest:priceLines';
+const STORE_VER_KEY = 'welthwest:priceLinesVer';
+const STORE_VERSION = 2;
+
 const loadLines = (): PositionLine[] => {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch { return []; }
+  try {
+    const stored: PositionLine[] = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+    const ver = parseInt(localStorage.getItem(STORE_VER_KEY) || '0', 10);
+    if (ver < STORE_VERSION) {
+      // v1→v2: old code stored the option FILL PREMIUM as `price` for option lines
+      // (e.g. ₹150 on a NIFTY chart that shows values at 24,000+).
+      // New code stores the underlying INDEX spot level.  Drop stale lines where
+      // optType is set but price is below any realistic Indian index level.
+      const migrated = stored.filter(l => !(l.optType && l.price < 5000));
+      localStorage.setItem(STORE_KEY, JSON.stringify(migrated));
+      localStorage.setItem(STORE_VER_KEY, String(STORE_VERSION));
+      return migrated;
+    }
+    return stored;
+  } catch {
+    return [];
+  }
 };
 const saveLines = (lines: PositionLine[]) => {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(lines)); } catch { /* */ }
@@ -74,17 +93,17 @@ interface PriceLinesState {
   /** Create entry + default SL + default TP all at once. */
   addEntryWithSlTp: (data: Omit<PositionLine, 'id' | 'type'>) => void;
 
-  /** Upsert SL for a position. */
-  setSl: (positionId: string, price: number) => void;
+  /** Upsert SL for a position. orderId/params are set when a LIMIT order is placed on the broker. */
+  setSl: (positionId: string, price: number, orderId?: string, params?: ExitOrderReParams) => void;
 
-  /** Upsert TP for a position. */
-  setTp: (positionId: string, price: number) => void;
+  /** Upsert TP for a position. orderId/params are set when a LIMIT order is placed on the broker. */
+  setTp: (positionId: string, price: number, orderId?: string, params?: ExitOrderReParams) => void;
 
   /** Upsert a limit-exit line for a position (placed as LIMIT order on broker). */
   setExit: (positionId: string, price: number, orderId?: string, params?: ExitOrderReParams) => void;
 
-  /** Update the broker order ID on an existing exit line (called after drag re-place). */
-  updateExitOrder: (positionId: string, orderId: string) => void;
+  /** Update the broker order ID on a line (exit/sl/tp) after drag re-place. Keyed by line id. */
+  updateExitOrder: (lineId: string, orderId: string) => void;
 
   /** Move an individual line to a new price (drag). */
   updatePrice: (id: string, price: number) => void;
@@ -132,26 +151,36 @@ export const usePriceLinesStore = create<PriceLinesState>((set, get) => ({
     set((s) => { const lines = [...s.lines, ...newLines]; saveLines(lines); return { lines }; });
   },
 
-  setSl(positionId, price) {
+  setSl(positionId, price, orderId?, params?) {
     const existing = get().lines.find(l => l.positionId === positionId && l.type === 'sl');
     if (existing) {
-      set(s => { const lines = s.lines.map(l => l.id === existing.id ? { ...l, price } : l); saveLines(lines); return { lines }; });
+      set(s => {
+        const lines = s.lines.map(l => l.id === existing.id
+          ? { ...l, price, ...(orderId !== undefined ? { exitOrderId: orderId } : {}), ...(params ? { exitOrderReParams: params } : {}) }
+          : l);
+        saveLines(lines); return { lines };
+      });
     } else {
       const entry = get().lines.find(l => l.positionId === positionId && l.type === 'entry');
       if (!entry) return;
-      const sl: PositionLine = { ...entry, id: uid(), type: 'sl', price };
+      const sl: PositionLine = { ...entry, id: uid(), type: 'sl', price, exitOrderId: orderId, exitOrderReParams: params };
       set(s => { const lines = [...s.lines, sl]; saveLines(lines); return { lines }; });
     }
   },
 
-  setTp(positionId, price) {
+  setTp(positionId, price, orderId?, params?) {
     const existing = get().lines.find(l => l.positionId === positionId && l.type === 'tp');
     if (existing) {
-      set(s => { const lines = s.lines.map(l => l.id === existing.id ? { ...l, price } : l); saveLines(lines); return { lines }; });
+      set(s => {
+        const lines = s.lines.map(l => l.id === existing.id
+          ? { ...l, price, ...(orderId !== undefined ? { exitOrderId: orderId } : {}), ...(params ? { exitOrderReParams: params } : {}) }
+          : l);
+        saveLines(lines); return { lines };
+      });
     } else {
       const entry = get().lines.find(l => l.positionId === positionId && l.type === 'entry');
       if (!entry) return;
-      const tp: PositionLine = { ...entry, id: uid(), type: 'tp', price };
+      const tp: PositionLine = { ...entry, id: uid(), type: 'tp', price, exitOrderId: orderId, exitOrderReParams: params };
       set(s => { const lines = [...s.lines, tp]; saveLines(lines); return { lines }; });
     }
   },
@@ -173,11 +202,9 @@ export const usePriceLinesStore = create<PriceLinesState>((set, get) => ({
     }
   },
 
-  updateExitOrder(positionId, orderId) {
+  updateExitOrder(lineId, orderId) {
     set(s => {
-      const lines = s.lines.map(l =>
-        l.positionId === positionId && l.type === 'exit' ? { ...l, exitOrderId: orderId } : l
-      );
+      const lines = s.lines.map(l => l.id === lineId ? { ...l, exitOrderId: orderId } : l);
       saveLines(lines); return { lines };
     });
   },

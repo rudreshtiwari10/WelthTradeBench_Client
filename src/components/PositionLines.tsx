@@ -176,110 +176,24 @@ export function PositionLines() {
         const isSl   = line.type === 'sl';
         const pnlEst = estimatePnl(line);
         const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
-        const maxLots = line.lots ?? 1;
-        // Clamp instead of skipping — an SL must still fire even if the exit-qty
-        // field holds an out-of-range value (skipping let the trade run on).
-        const exitLots = Math.min(maxLots, Math.max(1, line.exitQty ?? maxLots));
 
-        // Lock this position synchronously, BEFORE the async order call, so the
-        // very next tick cannot place a duplicate exit order.
         triggeredRef.current.add(line.positionId);
 
         pushToast(
           `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`
         );
 
-        // For options/futures (lots defined): lots × lotSize gives units to trade.
-        // For equity (lots undefined): use the position qty directly.
-        const exitQtyUnits = line.lots && line.lots > 0
-          ? Math.round(exitLots * (line.qty / line.lots))
-          : line.qty;
+        const isLiveBroker = useBrokerStore.getState().source !== 'paper';
 
-        const state = useBrokerStore.getState();
-
-        // Find any pending LIMIT exit order for this position
-        const limitExitLine = usePriceLinesStore.getState().lines.find(
-          (l) => l.positionId === line.positionId && l.type === 'exit' && l.exitOrderId,
-        );
-
-        if (state.source !== 'paper') {
-          // If the LIMIT exit order has already been filled by the broker, skip
-          // placing a MARKET exit — doing so would open an unwanted opposite position.
-          if (limitExitLine?.exitOrderId) {
-            const brokerOrds = useBrokerStore.getState().orders;
-            const exitOrd = brokerOrds.find(o => o.order_id === limitExitLine.exitOrderId);
-            if (exitOrd?.status === 'complete') {
-              pushToast(`${isSl ? 'SL' : 'TP'}: ${line.symbol} already exited via LIMIT order`);
-              removeByPos(line.positionId);
-              break;
-            }
-            // Cancel the pending LIMIT exit before the MARKET exit fires, so it
-            // doesn't fill later and open an opposite position.
-            cancelBrokerOrder(
-              limitExitLine.exitOrderId,
-              limitExitLine.exitOrderReParams?.broker ?? state.activeBroker,
-            ).catch(() => {});
-          }
-
-          const expiryStr = line.expiryDate
-            ? new Date(line.expiryDate).toISOString().split('T')[0]
-            : undefined;
-          const txType = (line.side === 'buy' ? 'SELL' : 'BUY') as 'BUY' | 'SELL';
-          let orderP: Promise<unknown> | null = null;
-          if (state.activeBroker === 'kite') {
-            if (line.underlying && expiryStr && line.strike && line.optType) {
-              orderP = state.placeOrder({
-                qty: exitQtyUnits,
-                transaction_type: txType,
-                order_type: 'MARKET',
-                product: 'D',
-                segment: 'option',
-                underlying: line.underlying,
-                expiry: expiryStr,
-                strike: line.strike,
-                option_type: line.optType,
-              });
-            } else if (line.underlying && expiryStr && !line.optType) {
-              orderP = state.placeOrder({
-                qty: exitQtyUnits,
-                transaction_type: txType,
-                order_type: 'MARKET',
-                product: 'D',
-                segment: 'future',
-                underlying: line.underlying,
-                expiry: expiryStr,
-              });
-            } else if (line.underlying) {
-              orderP = state.placeOrder({
-                qty: exitQtyUnits,
-                transaction_type: txType,
-                order_type: 'MARKET',
-                product: 'D',
-                segment: 'equity',
-                underlying: line.underlying,
-              });
-            }
-          } else if (line.instrumentKey) {
-            orderP = state.placeOrder({
-              instrument_key: line.instrumentKey,
-              qty: exitQtyUnits,
-              transaction_type: txType,
-              order_type: 'MARKET',
-              product: 'D',
-            });
-          }
-
-          if (orderP) {
-            orderP
-              .then(() => pushToast(`Exit order sent: ${line.symbol} ${txType} ${exitQtyUnits}qty`))
-              .catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err);
-                pushToast(`Exit order FAILED for ${line.symbol}: ${msg}`);
-              });
-          } else {
-            pushToast(`Cannot exit ${line.symbol}: missing instrument info — close manually`);
-          }
+        if (isLiveBroker) {
+          // Live broker: SL/TP LIMIT orders are placed directly on the broker via the
+          // SL/TP/EXIT buttons. The broker handles the fill automatically.
+          // Never fire a client-side MARKET order here — it causes double-fills and
+          // creates unwanted opposite positions when a LIMIT order is also pending.
+          // The auto-cleanup in effect 3b removes position lines once the broker
+          // confirms the LIMIT order is filled.
         } else {
+          // Paper mode: remove position immediately when SL/TP level is hit
           removePosition(line.positionId);
         }
 
@@ -299,21 +213,24 @@ export function PositionLines() {
     const ordersById = new Map(brokerOrders.map(o => [o.order_id, o]));
 
     for (const line of allLines) {
-      if (line.type !== 'exit' || !line.exitOrderId) continue;
+      // Watch exit, sl, and tp lines that have a broker LIMIT order attached
+      if ((line.type !== 'exit' && line.type !== 'sl' && line.type !== 'tp') || !line.exitOrderId) continue;
       if (processedOrdersRef.current.has(line.exitOrderId)) continue;
 
       const order = ordersById.get(line.exitOrderId);
       if (!order) continue;
 
+      const lineLabel = line.type === 'sl' ? 'SL' : line.type === 'tp' ? 'TP' : 'LIMIT exit';
+
       if (order.status === 'complete') {
         processedOrdersRef.current.add(line.exitOrderId);
-        triggeredRef.current.add(line.positionId);  // guard: prevent SL/TP firing
+        triggeredRef.current.add(line.positionId);  // guard: prevent duplicate processing
         removeByPos(line.positionId);
-        pushToast(`LIMIT exit filled: ${line.symbol}`);
+        pushToast(`${lineLabel} filled: ${line.symbol} @ ₹${order.average_price?.toFixed(2) ?? order.price?.toFixed(2)}`);
       } else if (order.status === 'cancelled' || order.status === 'rejected') {
         processedOrdersRef.current.add(line.exitOrderId);
-        removeLine(line.id);  // remove just the exit line; keep SL/TP active
-        pushToast(`LIMIT exit ${order.status}: ${line.symbol} — SL/TP lines still active`);
+        removeLine(line.id);  // remove just this line; other SL/TP/exit lines stay active
+        pushToast(`${lineLabel} ${order.status}: ${line.symbol} — set a new one to re-protect`);
       }
     }
   }, [brokerOrders, allLines, removeByPos, removeLine, pushToast]);
@@ -341,12 +258,12 @@ export function PositionLines() {
       dragRef.current = null;
       if (!drag) return;
 
-      // For exit lines: cancel the old LIMIT order and re-place at the new price
+      // For exit / sl / tp lines with a broker LIMIT order: cancel old + re-place at new price
       const line = usePriceLinesStore.getState().lines.find(l => l.id === drag.id);
-      if (!line || line.type !== 'exit' || !line.exitOrderReParams) return;
+      if (!line || (line.type !== 'exit' && line.type !== 'sl' && line.type !== 'tp') || !line.exitOrderReParams) return;
       if (Math.abs(line.price - drag.startPrice) < 0.01) return;  // no meaningful move
 
-      const { exitOrderId, exitOrderReParams, price, positionId, symbol } = line;
+      const { id: lineId, exitOrderId, exitOrderReParams, price, symbol } = line;
       const pushT = useToastStore.getState().push;
       const upd   = usePriceLinesStore.getState().updateExitOrder;
 
@@ -368,8 +285,8 @@ export function PositionLines() {
           instrument_key: exitOrderReParams.instrument_key,
         })
           .then((result) => {
-            if (result.order_id) upd(positionId, result.order_id);
-            pushT(`LIMIT exit moved: ${symbol} @ ₹${price.toFixed(2)}`);
+            if (result.order_id) upd(lineId, result.order_id);
+            pushT(`LIMIT order moved: ${symbol} @ ₹${price.toFixed(2)}`);
             // Refresh broker data
             useBrokerStore.getState().refresh();
           })

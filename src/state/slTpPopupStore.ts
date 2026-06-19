@@ -20,7 +20,7 @@ export interface SlTpPopupData {
   entryPrice: number;
   side: 'buy' | 'sell';
   suggestedPrice: number;
-  /** Populated only for type='exit' — the LIMIT order to place on confirm */
+  /** Populated for live broker mode (exit / sl / tp) — the LIMIT order to place on confirm */
   exitOrder?: ExitLimitOrder;
 }
 
