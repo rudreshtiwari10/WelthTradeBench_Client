@@ -19,8 +19,23 @@ export interface RenderEnv {
 }
 
 const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-const typical = (c: Candle) => (c.high + c.low + c.close) / 3;
 const clampIdx = (i: number, n: number) => Math.max(0, Math.min(n - 1, Math.round(i)));
+
+const calcVwapSource = (c: Candle, source: 'close' | 'hl2' | 'hlc3' | 'ohlc4' = 'hlc3') => {
+  switch (source) {
+    case 'close': return c.close;
+    case 'hl2': return (c.high + c.low) / 2;
+    case 'ohlc4': return (c.open + c.high + c.low + c.close) / 4;
+    case 'hlc3':
+    default: return (c.high + c.low + c.close) / 3;
+  }
+};
+
+export const DEFAULT_VWAP_BANDS = [
+  { multiplier: 1, upColor: '#4caf50', dnColor: '#4caf50', fillColor: 'rgba(76,175,80,0.1)', showBand: true, showFill: true },
+  { multiplier: 2, upColor: '#afb42b', dnColor: '#afb42b', fillColor: 'rgba(175,180,43,0.1)', showBand: false, showFill: false },
+  { multiplier: 3, upColor: '#00897b', dnColor: '#00897b', fillColor: 'rgba(0,137,123,0.1)', showBand: false, showFill: false },
+];
 
 // ── Anchored VWAP ───────────────────────────────────────────────────────────
 export function renderAnchoredVwap(
@@ -33,17 +48,17 @@ export function renderAnchoredVwap(
   const s = d.style;
   const start = clampIdx(d.points[0].logical, candles.length);
 
-  // Indices often report zero volume — fall back to equal (count) weighting so
-  // the line still draws (becomes a simple average of typical price).
   let anyVol = false;
   for (let i = start; i < candles.length; i++) { if ((candles[i].volume || 0) > 0) { anyVol = true; break; } }
 
   let cumPV = 0, cumV = 0, cumPV2 = 0;
-  type Row = { x: number; vwap: number; up: number; lo: number };
+  type Row = { x: number; vwap: number; sigma: number };
   const rows: Row[] = [];
+  const source = s.vwapSource || 'hlc3';
+
   for (let i = start; i < candles.length; i++) {
     const c = candles[i];
-    const tp = typical(c);
+    const tp = calcVwapSource(c, source);
     const v = anyVol ? (c.volume || 0) : 1;
     cumPV += tp * v; cumV += v; cumPV2 += tp * tp * v;
     if (cumV <= 0) continue;
@@ -51,73 +66,77 @@ export function renderAnchoredVwap(
     const variance = Math.max(0, cumPV2 / cumV - vwap * vwap);
     const x = toX(i);
     if (x == null) continue;
-    rows.push({ x, vwap, up: Math.sqrt(variance), lo: vwap });
+    rows.push({ x, vwap, sigma: Math.sqrt(variance) });
   }
   if (rows.length < 2) return;
 
+  const vwapBands = s.vwapBands || DEFAULT_VWAP_BANDS;
+  const showLine = s.vwapShowLine !== false;
+  const lineColor = s.vwapLineColor || s.color;
+
   ctx.save();
-  // ── σ bands (drawn first, behind the VWAP line) ──
-  if (s.vwapBands) {
-    for (const k of [2, 1]) {
-      const upPts: { x: number; y: number }[] = [];
-      const dnPts: { x: number; y: number }[] = [];
-      for (const r of rows) {
-        const yu = toY(r.vwap + k * r.up), yd = toY(r.vwap - k * r.up);
-        if (yu != null) upPts.push({ x: r.x, y: yu });
-        if (yd != null) dnPts.push({ x: r.x, y: yd });
+
+  // Draw fills and bands (highest multiplier first so it goes behind)
+  const sortedBands = [...vwapBands].sort((a, b) => b.multiplier - a.multiplier);
+
+  for (const b of sortedBands) {
+    if (!b.showBand && !b.showFill) continue;
+
+    const upPts: { x: number; y: number }[] = [];
+    const dnPts: { x: number; y: number }[] = [];
+    for (const r of rows) {
+      const yu = toY(r.vwap + b.multiplier * r.sigma);
+      const yd = toY(r.vwap - b.multiplier * r.sigma);
+      if (yu != null) upPts.push({ x: r.x, y: yu });
+      if (yd != null) dnPts.push({ x: r.x, y: yd });
+    }
+
+    if (upPts.length >= 2 && dnPts.length >= 2) {
+      if (b.showFill) {
+        ctx.beginPath();
+        ctx.moveTo(upPts[0].x, upPts[0].y);
+        for (const p of upPts.slice(1)) ctx.lineTo(p.x, p.y);
+        for (let i = dnPts.length - 1; i >= 0; i--) ctx.lineTo(dnPts[i].x, dnPts[i].y);
+        ctx.closePath();
+        ctx.fillStyle = b.fillColor;
+        ctx.globalAlpha = 0.1;
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
-      if (upPts.length < 2) continue;
-      // translucent fill between +kσ and −kσ
-      ctx.beginPath();
-      ctx.moveTo(upPts[0].x, upPts[0].y);
-      for (const p of upPts.slice(1)) ctx.lineTo(p.x, p.y);
-      for (let i = dnPts.length - 1; i >= 0; i--) ctx.lineTo(dnPts[i].x, dnPts[i].y);
-      ctx.closePath();
-      ctx.globalAlpha = k === 1 ? 0.10 : 0.05;
-      ctx.fillStyle = s.color;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      // dashed band edges
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = s.color;
-      ctx.lineWidth = 1;
-      for (const arr of [upPts, dnPts]) {
-        ctx.beginPath(); ctx.moveTo(arr[0].x, arr[0].y);
-        for (const p of arr.slice(1)) ctx.lineTo(p.x, p.y);
+
+      if (b.showBand) {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = b.upColor;
+        ctx.beginPath();
+        ctx.moveTo(upPts[0].x, upPts[0].y);
+        for (const p of upPts.slice(1)) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+
+        ctx.strokeStyle = b.dnColor;
+        ctx.beginPath();
+        ctx.moveTo(dnPts[0].x, dnPts[0].y);
+        for (const p of dnPts.slice(1)) ctx.lineTo(p.x, p.y);
         ctx.stroke();
       }
     }
   }
 
-  // ── VWAP line ──
-  ctx.setLineDash([]);
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = s.width || 2;
-  ctx.beginPath();
-  let started = false;
-  for (const r of rows) {
-    const y = toY(r.vwap);
-    if (y == null) continue;
-    if (!started) { ctx.moveTo(r.x, y); started = true; } else ctx.lineTo(r.x, y);
+  // ── VWAP line ──────────────────────────────────────────────────────────
+  if (showLine) {
+    ctx.setLineDash([]);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = s.width || 2;
+    ctx.beginPath();
+    let started = false;
+    for (const r of rows) {
+      const y = toY(r.vwap);
+      if (y == null) continue;
+      if (!started) { ctx.moveTo(r.x, y); started = true; } else ctx.lineTo(r.x, y);
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
 
-  // anchor marker + value label
-  const anchorY = toY(rows[0].vwap);
-  if (anchorY != null) {
-    ctx.beginPath(); ctx.arc(rows[0].x, anchorY, 4, 0, Math.PI * 2);
-    ctx.fillStyle = s.color; ctx.fill();
-  }
-  const last = rows[rows.length - 1];
-  const lastY = toY(last.vwap);
-  if (lastY != null) {
-    const label = `VWAP ${fmt(last.vwap)}`;
-    ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
-    const tw = ctx.measureText(label).width + 10;
-    ctx.fillStyle = s.color;
-    ctx.fillRect(last.x - tw, lastY - 9, tw, 18);
-    ctx.fillStyle = '#fff'; ctx.fillText(label, last.x - tw + 5, lastY);
-  }
   ctx.restore();
 }
 
@@ -170,10 +189,10 @@ export function renderVolumeProfile(
       continue;
     }
     
-    // Body-vs-Wick Heuristic: weight candle body 4x higher than wicks
-    // to prevent volume dilution across large price moves.
-    const bodyMin = Math.min(c.open, c.close);
-    const bodyMax = Math.max(c.open, c.close);
+    // Triangular Heuristic: weight volume highest near the Typical Price,
+    // tapering down to 0 at the High/Low extremes. This mimics the spiky
+    // distribution of intra-day aggregation much better than uniform distribution.
+    const typical = (c.high + c.low + c.close) / 3;
     const weights = new Array(ROWS).fill(0);
     let totalWeight = 0;
 
@@ -182,10 +201,12 @@ export function renderVolumeProfile(
       const ov = Math.max(0, Math.min(c.high, rHi) - Math.max(c.low, rLo));
       if (ov <= 0) continue;
 
-      const bodyOv = Math.max(0, Math.min(bodyMax, rHi) - Math.max(bodyMin, rLo));
-      const wickOv = ov - bodyOv;
-
-      const w = (bodyOv * 4.0) + (wickOv * 1.0);
+      const rowMid = (rLo + rHi) / 2;
+      const dist = Math.abs(rowMid - typical);
+      const maxDist = (rowMid > typical) ? (c.high - typical) : (typical - c.low);
+      const spread = Math.max(0.0001, maxDist);
+      
+      const w = Math.max(0, 1 - (dist / spread)) * ov;
       weights[r] = w;
       totalWeight += w;
     }
@@ -205,8 +226,9 @@ export function renderVolumeProfile(
   let maxVol = 0, pocRow = 0;
   totals.forEach((t, i) => { if (t > maxVol) { maxVol = t; pocRow = i; } });
 
-  // value area: expand from POC by higher-volume adjacent side until ≥ 70 %
-  const target = total * 0.7;
+  // value area: expand from POC by higher-volume adjacent side until >= target %
+  const targetPct = (s.vpValueArea ?? 70) / 100;
+  const target = total * targetPct;
   let vaUp = pocRow, vaDn = pocRow, acc = totals[pocRow];
   while (acc < target && (vaDn > 0 || vaUp < ROWS - 1)) {
     const below = vaDn > 0 ? totals[vaDn - 1] : -1;
@@ -219,10 +241,16 @@ export function renderVolumeProfile(
   if (x0 == null || x1 == null) return;
   const boxL = Math.min(x0, x1), boxR = Math.max(x0, x1);
   const boxW = boxR - boxL;
-  // histogram grows from the left edge of the range, rightward
-  const maxBarW = Math.min(boxW * 0.32, 160);
-  const upCol = s.upColor || 'rgba(38,166,154,0.55)';
-  const dnCol = s.downColor || 'rgba(239,83,80,0.55)';
+
+  const vpWidthPct = (s.vpWidth ?? 30) / 100;
+  const maxBarW = Math.max(10, boxW * vpWidthPct);
+  
+  const alignRight = s.vpPlacement === 'right';
+
+  const upColVA = s.vpUpColorVA || '#26a69a';
+  const dnColVA = s.vpDownColorVA || '#ef5350';
+  const upCol = s.vpUpColor || '#26a69a';
+  const dnCol = s.vpDownColor || '#ef5350';
 
   ctx.save();
   // faint range box
@@ -231,7 +259,6 @@ export function renderVolumeProfile(
     const boxY = Math.min(yTop, yBot);
     const boxH = Math.abs(yBot - yTop);
 
-    // Semi-transparent background fill to match TradingView
     ctx.fillStyle = 'rgba(41, 98, 255, 0.04)';
     ctx.fillRect(boxL, boxY, boxW, boxH);
 
@@ -247,36 +274,66 @@ export function renderVolumeProfile(
     if (yA == null || yB == null) continue;
     const top = Math.min(yA, yB), barH = Math.max(1, Math.abs(yB - yA) - 1);
     const inVA = r >= vaDn && r <= vaUp;
+    
     const wUp = (volUp[r] / maxVol) * maxBarW;
     const wDn = (volDn[r] / maxVol) * maxBarW;
-    ctx.globalAlpha = inVA ? 1 : 0.5;
-    // stacked up (green) then down (red), anchored at left edge
-    ctx.fillStyle = upCol; ctx.fillRect(boxL, top, wUp, barH);
-    ctx.fillStyle = dnCol; ctx.fillRect(boxL + wUp, top, wDn, barH);
+    
+    ctx.globalAlpha = inVA ? 0.8 : 0.3;
+    
+    ctx.fillStyle = inVA ? upColVA : upCol;
+    if (alignRight) {
+      ctx.fillRect(boxR - wUp, top, wUp, barH);
+      ctx.fillStyle = inVA ? dnColVA : dnCol;
+      ctx.fillRect(boxR - wUp - wDn, top, wDn, barH);
+    } else {
+      ctx.fillRect(boxL, top, wUp, barH);
+      ctx.fillStyle = inVA ? dnColVA : dnCol;
+      ctx.fillRect(boxL + wUp, top, wDn, barH);
+    }
+    
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 
-  // POC line (orange) + VAH / VAL (blue) across the box
+  // POC line
   const pocPrice = pMin + (pocRow + 0.5) * rowH;
   const yPoc = toY(pocPrice);
   ctx.font = '10px sans-serif';
   ctx.textBaseline = 'middle';
-  if (yPoc != null) {
-    ctx.strokeStyle = '#ff9800'; ctx.lineWidth = 1.5;
+  if (yPoc != null && s.vpShowPOC !== false) {
+    const pocCol = s.vpPocColor || '#ff9800';
+    ctx.strokeStyle = pocCol; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(boxL, yPoc); ctx.lineTo(boxR, yPoc); ctx.stroke();
-    ctx.fillStyle = '#ff9800';
-    ctx.textAlign = 'right';
-    ctx.fillText(`POC ${fmt(pocPrice)}`, boxR - 4, yPoc - 7);
+    ctx.fillStyle = pocCol;
+    ctx.textAlign = alignRight ? 'left' : 'right';
+    ctx.fillText(`POC ${fmt(pocPrice)}`, alignRight ? boxL + 4 : boxR - 4, yPoc - 7);
   }
-  const vah = pMin + (vaUp + 1) * rowH, val = pMin + vaDn * rowH;
-  ctx.strokeStyle = 'rgba(41,98,255,0.7)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
-  for (const [p, lbl] of [[vah, 'VAH'], [val, 'VAL']] as [number, string][]) {
-    const y = toY(p); if (y == null) continue;
-    ctx.beginPath(); ctx.moveTo(boxL, y); ctx.lineTo(boxR, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(41,98,255,0.9)';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${lbl} ${fmt(p)}`, boxR - 4, y - 7);
+
+  // VAH / VAL lines
+  if (s.vpShowVA !== false) {
+    const vah = pMin + (vaUp + 1) * rowH, val = pMin + vaDn * rowH;
+    ctx.setLineDash([5, 4]); ctx.lineWidth = 1;
+    
+    const yVah = toY(vah);
+    if (yVah != null) {
+      const vahCol = s.vpVahColor || '#2962ff';
+      ctx.strokeStyle = vahCol;
+      ctx.beginPath(); ctx.moveTo(boxL, yVah); ctx.lineTo(boxR, yVah); ctx.stroke();
+      ctx.fillStyle = vahCol;
+      ctx.textAlign = alignRight ? 'left' : 'right';
+      ctx.fillText(`VAH ${fmt(vah)}`, alignRight ? boxL + 4 : boxR - 4, yVah - 7);
+    }
+
+    const yVal = toY(val);
+    if (yVal != null) {
+      const valCol = s.vpValColor || '#2962ff';
+      ctx.strokeStyle = valCol;
+      ctx.beginPath(); ctx.moveTo(boxL, yVal); ctx.lineTo(boxR, yVal); ctx.stroke();
+      ctx.fillStyle = valCol;
+      ctx.textAlign = alignRight ? 'left' : 'right';
+      ctx.fillText(`VAL ${fmt(val)}`, alignRight ? boxL + 4 : boxR - 4, yVal - 7);
+    }
   }
+
   ctx.textAlign = 'left';
   ctx.setLineDash([]);
   ctx.restore();

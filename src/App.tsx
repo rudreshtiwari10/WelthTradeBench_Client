@@ -19,7 +19,7 @@ import { initHistoryTracking } from './state/historyStore';
 import { useAuthStore } from './state/authStore';
 import { useLayoutStore } from './state/layoutStore';
 import { fetchWorkspace, initWorkspaceAutosave } from './state/workspaceSync';
-import { CryptoPanel } from './crypto/CryptoPanel';
+import { CryptoRightPanel } from './crypto/CryptoPanel';
 import { useCryptoStore } from './crypto/cryptoStore';
 import { useEffect, useRef } from 'react';
 import './App.css';
@@ -109,7 +109,7 @@ export default function App() {
           <ChartArea />
           <BottomBar />
         </div>
-        <RightPanel />
+        {cryptoMode ? <CryptoRightPanel /> : <RightPanel />}
       </div>
       <IndicatorsDialog />
       <ChartSettingsDialog />
@@ -117,7 +117,6 @@ export default function App() {
       {chainOpen && <OptionsChainPanel />}
       {commodityOpen && <CommodityPanel />}
       {searchOpen && <SymbolSearch onClose={closeSearch} initialQuery={searchInitialQuery} />}
-      {cryptoMode && <CryptoPanel />}
       <ToastHost />
     </div>
   );

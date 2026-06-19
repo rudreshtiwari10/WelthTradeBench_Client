@@ -247,12 +247,13 @@ export function DrawingLayer() {
         return;
       }
       const m = { x: e.clientX - r.left, y: e.clientY - r.top };
+      const env = { candles: candlesRef.current, toX, toY };
       let hitId: string | null = null;
       for (let i = s.current.drawings.length - 1; i >= 0; i--) {
         const d = s.current.drawings[i];
         if (d.hidden) continue;
         const pts = d.points.map(project).filter(Boolean) as Pt[];
-        if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h)) {
+        if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h, env)) {
           hitId = d.id;
           break;
         }
@@ -328,6 +329,7 @@ export function DrawingLayer() {
     const r = canvasRef.current!.getBoundingClientRect();
     const m = { x: e.clientX - r.left, y: e.clientY - r.top };
     const w = sizeRef.current.w, h = sizeRef.current.h;
+    const env = { candles: candlesRef.current, toX, toY };
 
     // Handle drag on currently-selected drawing
     const sel = s.current.drawings.find((d) => d.id === s.current.selectedId);
@@ -346,7 +348,7 @@ export function DrawingLayer() {
       const d = s.current.drawings[i];
       if (d.hidden) continue;
       const pts = d.points.map(project).filter(Boolean) as Pt[];
-      if (pts.length === d.points.length && hitTest(d, pts, m, w, h)) {
+      if (pts.length === d.points.length && hitTest(d, pts, m, w, h, env)) {
         if (tool === 'eraser') { s.current.removeDrawing(d.id); return; }
 
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -441,11 +443,12 @@ export function DrawingLayer() {
     const r = canvasRef.current!.getBoundingClientRect();
     const m = { x: e.clientX - r.left, y: e.clientY - r.top };
     const w = sizeRef.current.w, h = sizeRef.current.h;
+    const env = { candles: candlesRef.current, toX, toY };
     for (let i = s.current.drawings.length - 1; i >= 0; i--) {
       const d = s.current.drawings[i];
       if (d.hidden) continue;
       const pts = d.points.map(project).filter(Boolean) as Pt[];
-      if (pts.length === d.points.length && hitTest(d, pts, m, w, h)) {
+      if (pts.length === d.points.length && hitTest(d, pts, m, w, h, env)) {
         s.current.select(d.id);
         setCtxMenu({ x: e.clientX, y: e.clientY, drawingId: d.id });
         return;
@@ -578,11 +581,12 @@ export function DrawingLayer() {
           if (!isDrawTool(s.current.activeTool)) {
             const r = canvasRef.current!.getBoundingClientRect();
             const m = { x: e.clientX - r.left, y: e.clientY - r.top };
+            const env = { candles: candlesRef.current, toX, toY };
             for (let i = s.current.drawings.length - 1; i >= 0; i--) {
               const d = s.current.drawings[i];
               if (d.hidden) continue;
               const pts = d.points.map(project).filter(Boolean) as Pt[];
-              if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h)) {
+              if (pts.length === d.points.length && hitTest(d, pts, m, sizeRef.current.w, sizeRef.current.h, env)) {
                 s.current.select(d.id);
                 openDrawingSettings(d.id);
                 return;

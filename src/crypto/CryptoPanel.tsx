@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useState } from 'react';
 import { ChartArea } from '../components/ChartArea';
+import { Icon } from '../icons/Icon';
 import { useChartStore } from '../state/chartStore';
 import { useCryptoStore, type XMPosition } from './cryptoStore';
 import { CRYPTO_SYMBOLS, type CryptoSymbol } from './symbols';
@@ -206,7 +207,8 @@ function PositionRow({ pos, onClose }: { pos: XMPosition; onClose: () => void })
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export function CryptoPanel() {
+export function CryptoRightPanel() {
+  const [collapsed, setCollapsed] = useState(false);
   // Selective subscriptions — avoid re-rendering on every Binance tick.
   const toggleCryptoMode = useCryptoStore((s) => s.toggleCryptoMode);
   const setTick          = useCryptoStore((s) => s.setTick);
@@ -265,33 +267,50 @@ export function CryptoPanel() {
     useChartStore.getState().setSymbol(cryptoSymbolInfo(sym));
   };
 
+  if (collapsed) {
+    return (
+      <aside className="rightpanel rightpanel--collapsed">
+        <button
+          className="rp-expand-btn"
+          title="Expand crypto panel"
+          onClick={() => setCollapsed(false)}
+        >
+          <Icon name="chevronLeft" size={16} />
+        </button>
+        <div className="rp-rail">
+          <button className="rp-rail-btn icon-btn" onClick={toggleCryptoMode} title="Exit Crypto Mode">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <div className="cp-overlay">
-      <div className="cp-body">
-        {/* Watchlist */}
-        <div className="cp-watchlist">
-          <div className="cp-wl-header">
-            Markets
-            <button className="cp-close-btn" onClick={toggleCryptoMode} title="Exit Crypto Mode">✕</button>
-          </div>
-          {CRYPTO_SYMBOLS.map((sym) => (
-            <WatchlistItem
-              key={sym.binance}
-              sym={sym}
-              active={activeCryptoSym.binance === sym.binance}
-              onClick={() => selectSymbol(sym)}
-            />
-          ))}
-        </div>
-
-        {/* Existing chart — full features: drawings, indicators, replay, etc. */}
-        <div className="cp-chart-wrapper">
-          <ChartArea />
-        </div>
-
-        {/* XM order panel */}
-        <OrderPanel symbol={activeCryptoSym} />
+    <aside className="rightpanel crypto-panel" style={{ width: 260, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div className="rp-tabs">
+        <span style={{ fontSize: 12, fontWeight: 600, paddingLeft: 12, color: '#e6edf3' }}>CRYPTO</span>
+        <div style={{ flex: 1 }} />
+        <button className="rp-tab" title="Exit Crypto Mode" onClick={toggleCryptoMode}>
+          <Icon name="close" size={16} />
+        </button>
+        <button className="rp-tab" title="Collapse panel" onClick={() => setCollapsed(true)}>
+          <Icon name="chevronRight" size={16} />
+        </button>
       </div>
-    </div>
+
+      <div className="cp-watchlist" style={{ flex: 1, width: '100%', borderRight: 'none' }}>
+        {CRYPTO_SYMBOLS.map((sym) => (
+          <WatchlistItem
+            key={sym.binance}
+            sym={sym}
+            active={activeCryptoSym.binance === sym.binance}
+            onClick={() => selectSymbol(sym)}
+          />
+        ))}
+      </div>
+
+      <OrderPanel symbol={activeCryptoSym} />
+    </aside>
   );
 }

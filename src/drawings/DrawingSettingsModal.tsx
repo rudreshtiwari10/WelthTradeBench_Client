@@ -187,19 +187,132 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
             )}
 
             {/* Anchored VWAP options */}
-            {d.type === 'anchored_vwap' && (
-              <div className="dsm-row">
-                <label className="dsm-label">Std-dev bands</label>
-                <label className="dsm-check">
-                  <input
-                    type="checkbox"
-                    checked={!!s.vwapBands}
-                    onChange={(e) => patchStyle({ vwapBands: e.target.checked })}
-                  />
-                  Show ±1σ / ±2σ
-                </label>
-              </div>
-            )}
+            {d.type === 'anchored_vwap' && (() => {
+              const bands = s.vwapBands || [
+                { multiplier: 1, upColor: '#4caf50', dnColor: '#4caf50', fillColor: '#4caf50', showBand: true, showFill: true },
+                { multiplier: 2, upColor: '#afb42b', dnColor: '#afb42b', fillColor: '#afb42b', showBand: false, showFill: false },
+                { multiplier: 3, upColor: '#00897b', dnColor: '#00897b', fillColor: '#00897b', showBand: false, showFill: false },
+              ];
+
+              const updateBand = (i: number, patch: Partial<(typeof bands)[0]>) => {
+                const copy = [...bands];
+                copy[i] = { ...copy[i], ...patch };
+                patchStyle({ vwapBands: copy });
+              };
+
+              return (
+                <div className="dsm-vwap-grid">
+                  <div className="dsm-row">
+                    <label className="dsm-label">Source</label>
+                    <select
+                      className="dsm-select"
+                      value={s.vwapSource || 'hlc3'}
+                      onChange={(e) => patchStyle({ vwapSource: e.target.value as any })}
+                    >
+                      <option value="close">Close</option>
+                      <option value="hl2">(H + L) / 2</option>
+                      <option value="hlc3">(H + L + C) / 3</option>
+                      <option value="ohlc4">(O + H + L + C) / 4</option>
+                    </select>
+                  </div>
+
+                  <div className="dsm-row">
+                    <label className="dsm-check">
+                      <input
+                        type="checkbox"
+                        checked={s.vwapShowLine !== false}
+                        onChange={(e) => patchStyle({ vwapShowLine: e.target.checked })}
+                      />
+                      VWAP
+                    </label>
+                    <input
+                      type="color"
+                      className="dsm-color-input"
+                      style={{ width: 36, height: 28 }}
+                      value={s.vwapLineColor || s.color}
+                      onChange={(e) => patchStyle({ vwapLineColor: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="dsm-sep" style={{ margin: '12px 0', borderBottom: '1px solid var(--border)' }} />
+
+                  {bands.map((b, i) => (
+                    <div key={i} style={{ marginBottom: 16 }}>
+                      <div className="dsm-row">
+                        <label className="dsm-check" style={{ fontWeight: 600 }}>
+                          <input
+                            type="checkbox"
+                            checked={b.showBand || b.showFill}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              updateBand(i, { showBand: v, showFill: v });
+                            }}
+                          />
+                          Bands Multiplier #{i + 1}
+                        </label>
+                        <input
+                          type="number"
+                          min="0.1" max="5" step="0.1"
+                          className="dsm-number"
+                          value={b.multiplier}
+                          onChange={(e) => updateBand(i, { multiplier: parseFloat(e.target.value) || 1.0 })}
+                        />
+                      </div>
+
+                      {(b.showBand || b.showFill) && (
+                        <div style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                          <div className="dsm-row" style={{ height: 28 }}>
+                            <label className="dsm-check">
+                              <input
+                                type="checkbox"
+                                checked={b.showBand}
+                                onChange={(e) => updateBand(i, { showBand: e.target.checked })}
+                              />
+                              Upper Band
+                            </label>
+                            <input
+                              type="color" className="dsm-color-input" style={{ width: 36, height: 28 }}
+                              value={b.upColor} onChange={(e) => updateBand(i, { upColor: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="dsm-row" style={{ height: 28 }}>
+                            <label className="dsm-check">
+                              <input
+                                type="checkbox"
+                                checked={b.showBand}
+                                onChange={(e) => updateBand(i, { showBand: e.target.checked })}
+                              />
+                              Lower Band
+                            </label>
+                            <input
+                              type="color" className="dsm-color-input" style={{ width: 36, height: 28 }}
+                              value={b.dnColor} onChange={(e) => updateBand(i, { dnColor: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="dsm-row" style={{ height: 28 }}>
+                            <label className="dsm-check">
+                              <input
+                                type="checkbox"
+                                checked={b.showFill}
+                                onChange={(e) => updateBand(i, { showFill: e.target.checked })}
+                              />
+                              Background
+                            </label>
+                            <input
+                              type="color" className="dsm-color-input" style={{ width: 36, height: 28 }}
+                              value={b.fillColor.length === 7 ? b.fillColor : '#4caf50'}
+                              onChange={(e) => updateBand(i, { fillColor: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Volume Profile options */}
             {VP_TOOLS.has(d.type) && (

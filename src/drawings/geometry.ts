@@ -240,8 +240,14 @@ function renderElliottWave(
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Label badge above/below the dot (above for odd indices, below for even)
-    const above = i % 2 === 0;
+    // Label badge placement: above for peaks, below for troughs
+    let above = true;
+    if (i === 0 && pts.length > 1) {
+      above = pts[0].y < pts[1].y;
+    } else if (i > 0) {
+      above = pts[i].y < pts[i - 1].y;
+    }
+
     const bx = p.x;
     const by = above ? p.y - 16 : p.y + 16;
 
@@ -485,20 +491,52 @@ function measureLabel(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: numbe
   const dp = prices[1] - prices[0];
   const pct = prices[0] ? (dp / prices[0]) * 100 : 0;
   const up = dp >= 0;
+  
   const l1 = `${up ? '+' : ''}${fmt(dp)} (${up ? '+' : ''}${pct.toFixed(2)}%)`;
   const l2 = `${bars} bar${bars === 1 ? '' : 's'}`;
-  ctx.save(); ctx.setLineDash([]); ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-  const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - 22;
-  const tw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width) + 16;
-  ctx.fillStyle = up ? 'rgba(38,166,154,0.95)' : 'rgba(239,83,80,0.95)';
-  ctx.fillRect(mx - tw / 2, my - 4, tw, 34);
-  ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
-  ctx.fillText(l1, mx, my + 6);
-  ctx.fillText(l2, mx, my + 22);
-  // direction arrow between the two points
-  ctx.strokeStyle = up ? '#26a69a' : '#ef5350'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo((a.x + b.x) / 2, a.y); ctx.lineTo((a.x + b.x) / 2, b.y); ctx.stroke();
-  arrowHead(ctx, { x: (a.x + b.x) / 2, y: a.y }, { x: (a.x + b.x) / 2, y: b.y }, 8);
+  
+  ctx.save(); 
+  ctx.setLineDash([]); 
+  ctx.font = '13px sans-serif'; 
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const tw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width) + 24;
+  const th = 46;
+  
+  // Placement: stick it just outside the destination Y (b.y)
+  const isDown = b.y > a.y;
+  const badgeY = isDown ? b.y + th / 2 + 8 : b.y - th / 2 - 8;
+  
+  // Inner cross arrows
+  ctx.strokeStyle = up ? '#26a69a' : '#ef5350'; 
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = 1;
+  
+  // Vertical line
+  ctx.beginPath(); ctx.moveTo(mx, a.y); ctx.lineTo(mx, b.y); ctx.stroke();
+  arrowHead(ctx, { x: mx, y: a.y }, { x: mx, y: b.y }, 6);
+  ctx.stroke();
+  
+  // Horizontal line
+  ctx.beginPath(); ctx.moveTo(a.x, my); ctx.lineTo(b.x, my); ctx.stroke();
+  arrowHead(ctx, { x: a.x, y: my }, { x: b.x, y: my }, 6);
+  ctx.stroke();
+  
+  // Draw the badge box
+  ctx.fillStyle = up ? '#26a69a' : '#ef5350';
+  if ((ctx as any).roundRect) {
+    ctx.beginPath(); (ctx as any).roundRect(mx - tw / 2, badgeY - th / 2, tw, th, 6); ctx.fill();
+  } else {
+    ctx.fillRect(mx - tw / 2, badgeY - th / 2, tw, th);
+  }
+  
+  ctx.fillStyle = '#fff';
+  ctx.fillText(l1, mx, badgeY - 10);
+  ctx.fillText(l2, mx, badgeY + 10);
+  
   ctx.restore();
 }
 
@@ -628,7 +666,7 @@ export function renderHoverHighlight(
 }
 
 // ── hit testing (screen space) ──────────────────────────────────────────
-export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boolean {
+export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number, env?: RenderEnv): boolean {
   if (EXTRA_TYPES.has(d.type)) return hitTestExtra(d, pts, m, w, h);
   const tol = 6 + d.style.width;
   switch (d.type) {
@@ -638,7 +676,6 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
     case 'hline': case 'hray': return Math.abs(m.y - pts[0].y) < tol && (d.type === 'hline' || m.x >= pts[0].x - tol);
     case 'vline': return Math.abs(m.x - pts[0].x) < tol;
     case 'longpos': case 'shortpos': {
-      // Test proximity to the rectangular bounds of the long/short position
       if (pts.length < 2) return false;
       const xs = pts.map((p) => p.x);
       const xL = Math.min(...xs);
@@ -655,10 +692,27 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number): boo
       return m.x >= x - tol && m.x <= x + rw + tol && m.y >= y - tol && m.y <= y + rh + tol;
     }
     case 'fixed_vp': {
-      // Box spanning the two anchors (vertical extent unknown without OHLCV → use full height)
       if (pts.length < 2) return false;
       const xL = Math.min(pts[0].x, pts[1].x), xR = Math.max(pts[0].x, pts[1].x);
-      return m.x >= xL - tol && m.x <= xR + tol;
+      let yTop = 0, yBot = h;
+      if (env && d.points[0] && d.points[1]) {
+        const cs = env.candles;
+        const i0 = Math.max(0, Math.round(Math.min(d.points[0].logical, d.points[1].logical)));
+        const i1 = Math.min(cs.length - 1, Math.round(Math.max(d.points[0].logical, d.points[1].logical)));
+        let pMin = Infinity, pMax = -Infinity;
+        for (let i = i0; i <= i1; i++) {
+          pMin = Math.min(pMin, cs[i].low);
+          pMax = Math.max(pMax, cs[i].high);
+        }
+        if (pMin <= pMax) {
+          const t = env.toY(pMax), b = env.toY(pMin);
+          if (t != null && b != null) {
+            yTop = Math.min(t, b);
+            yBot = Math.max(t, b);
+          }
+        }
+      }
+      return m.x >= xL - tol && m.x <= xR + tol && m.y >= yTop - tol && m.y <= yBot + tol;
     }
     case 'anchored_vp': return m.x >= pts[0].x - tol;
     case 'anchored_vwap': return m.x >= pts[0].x - tol && Math.abs(m.y - pts[0].y) < 40;

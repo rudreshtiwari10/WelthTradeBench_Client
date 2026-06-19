@@ -93,6 +93,15 @@ export type DrawingType =
   | 'ew_triple'     // W-X-Y-X-Z  (6 points: 0→W→X→Y→X2→Z)
   | 'xabcd';        // X-A-B-C-D  (5 points)
 
+export interface VwapBandConfig {
+  multiplier: number;
+  upColor: string;
+  dnColor: string;
+  fillColor: string;
+  showBand: boolean;
+  showFill: boolean;
+}
+
 export interface DStyle {
   color: string;
   width: number;
@@ -108,9 +117,23 @@ export interface DStyle {
   showPriceLabel?: boolean;  // show price tag on right axis
   // ── Data-driven tool options (VWAP / volume profile) ─────────────────
   vpRows?: number;           // volume-profile row count (default 24)
-  vwapBands?: boolean;       // draw ±1σ / ±2σ bands on anchored VWAP
-  upColor?: string;          // volume-profile bullish color
-  downColor?: string;        // volume-profile bearish color
+  vpWidth?: number;          // volume-profile box width percentage 0-100 (default 30)
+  vpPlacement?: 'left' | 'right'; // histogram alignment
+  vpValueArea?: number;      // value area percentage 0-100 (default 70)
+  vpUpColorVA?: string;      // up volume color (inside Value Area)
+  vpDownColorVA?: string;    // down volume color (inside Value Area)
+  vpUpColor?: string;        // up volume color (outside Value Area)
+  vpDownColor?: string;      // down volume color (outside Value Area)
+  vpShowPOC?: boolean;       // point of control line toggle
+  vpPocColor?: string;       // point of control line color
+  vpShowVA?: boolean;        // value area high/low lines toggle
+  vpVahColor?: string;       // value area high line color
+  vpValColor?: string;       // value area low line color
+  // ── Anchored VWAP-specific options ────────────────────────────────────
+  vwapSource?: 'close' | 'hl2' | 'hlc3' | 'ohlc4';
+  vwapShowLine?: boolean;
+  vwapLineColor?: string;
+  vwapBands?: VwapBandConfig[];
   // ── Fibonacci Retracement options (TradingView parity) ───────────────
   fibLevels?: FibLevelConfig[];                          // per-level enable + color
   fibExtend?: 'none' | 'left' | 'right' | 'both';       // line extension mode
