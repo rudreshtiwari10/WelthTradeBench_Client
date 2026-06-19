@@ -1,4 +1,4 @@
-import { FIB_COLORS, FIB_LEVELS, EW_LABELS, type Drawing, type DStyle } from './types';
+import { FIB_COLORS, FIB_LEVELS, EW_LABELS, DEFAULT_FIB_LEVELS, type Drawing, type DStyle, type FibLevelConfig } from './types';
 import { renderAnchoredVwap, renderVolumeProfile, type RenderEnv } from './volumeTools';
 import { renderExtra, hitTestExtra, EXTRA_TYPES } from './extraTools';
 
@@ -273,35 +273,114 @@ function priceTag(ctx: CanvasRenderingContext2D, w: number, y: number, price: nu
 }
 
 function renderFib(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: number[], s: DStyle, w: number) {
-  const [pa, pb] = prices;
-  // Lines extend to full canvas width (matching TradingView behavior)
-  const xL = 0, xR = w;
-  // Anchor marker range for the fill bands
-  const fillXL = Math.min(a.x, b.x), fillXR = Math.max(a.x, b.x);
-  ctx.save(); ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
-  let prevY: number | null = null;
-  for (const lv of FIB_LEVELS) {
+  const levels: FibLevelConfig[] = s.fibLevels ?? DEFAULT_FIB_LEVELS;
+  const showPrices = s.fibShowPrices !== false;       // default true
+  const showLevels = s.fibShowLevels !== false;       // default true
+  const showBg     = s.fibShowBackground !== false;   // default true
+  const reverse    = !!s.fibReverse;
+  const extendMode = s.fibExtend ?? 'none';
+  const labelPos   = s.fibLabelPosition ?? 'left';
+  const labelAlign = s.fibLabelAlign ?? 'top';
+  const fSize      = s.fibFontSize ?? 11;
+
+  // When reversed, swap the two anchors so 0=bottom becomes 0=top (or vice versa)
+  let pa = prices[0], pb = prices[1];
+  let ptA = a, ptB = b;
+  if (reverse) {
+    [pa, pb] = [pb, pa];
+    [ptA, ptB] = [ptB, ptA];
+  }
+
+  // Horizontal extent for the level lines
+  const anchorLeft  = Math.min(ptA.x, ptB.x);
+  const anchorRight = Math.max(ptA.x, ptB.x);
+  const xL = (extendMode === 'left' || extendMode === 'both') ? 0 : anchorLeft;
+  const xR = (extendMode === 'right' || extendMode === 'both') ? w : anchorRight;
+
+  ctx.save();
+  ctx.font = `${fSize}px sans-serif`;
+  ctx.textBaseline = labelAlign === 'top' ? 'bottom' : labelAlign === 'bottom' ? 'top' : 'middle';
+
+  // Draw connecting trendline between the two anchor points (like TradingView)
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(ptA.x, ptA.y);
+  ctx.lineTo(ptB.x, ptB.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Collect enabled levels with their computed Y positions and prices
+  const computed: { lv: number; y: number; price: number; color: string }[] = [];
+  for (const lc of levels) {
+    if (!lc.enabled) continue;
+    const lv = lc.level;
     let y: number, price: number;
     if (lv <= 1) {
-      y     = a.y  + (b.y  - a.y)  * lv;
-      price = pa   + (pb   - pa)   * lv;
+      y     = ptA.y  + (ptB.y  - ptA.y)  * lv;
+      price = pa     + (pb     - pa)     * lv;
     } else {
-      y     = a.y  - (b.y  - a.y)  * (lv - 1);
-      price = pa   - (pb   - pa)   * (lv - 1);
+      y     = ptA.y  - (ptB.y  - ptA.y)  * (lv - 1);
+      price = pa     - (pb     - pa)     * (lv - 1);
     }
-    const c = FIB_COLORS[lv] || s.color;
-    if (prevY != null && lv <= 1) {
-      ctx.globalAlpha = 0.06; ctx.fillStyle = c;
-      ctx.fillRect(fillXL, Math.min(prevY, y), fillXR - fillXL, Math.abs(y - prevY));
-      ctx.globalAlpha = 1;
-    }
-    ctx.strokeStyle = c; ctx.setLineDash([]); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y); ctx.stroke();
-    ctx.fillStyle = c; ctx.fillText(`${lv}  ${fmt(price)}`, fillXL + 4, y - 7);
-    if (lv <= 1) prevY = y;
+    computed.push({ lv, y, price, color: lc.color });
   }
+
+  // Background fill bands between adjacent enabled levels (within 0-1 range)
+  if (showBg) {
+    const retraceLevels = computed.filter((c) => c.lv >= 0 && c.lv <= 1);
+    for (let i = 1; i < retraceLevels.length; i++) {
+      const prev = retraceLevels[i - 1];
+      const cur  = retraceLevels[i];
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = cur.color;
+      ctx.fillRect(anchorLeft, Math.min(prev.y, cur.y), anchorRight - anchorLeft, Math.abs(cur.y - prev.y));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw level lines and labels
+  for (const { lv, y, price, color } of computed) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(xL, y);
+    ctx.lineTo(xR, y);
+    ctx.stroke();
+
+    // Build label text
+    const parts: string[] = [];
+    if (showLevels) parts.push(String(lv));
+    if (showPrices) parts.push(`(${fmt(price)})`);
+    const label = parts.join(' ');
+    if (!label) continue;
+
+    // Label position
+    const labelPad = 4;
+    let lx: number;
+    if (labelPos === 'left') {
+      ctx.textAlign = 'left';
+      lx = anchorLeft + labelPad;
+    } else if (labelPos === 'right') {
+      ctx.textAlign = 'right';
+      lx = anchorRight - labelPad;
+    } else {
+      ctx.textAlign = 'center';
+      lx = (anchorLeft + anchorRight) / 2;
+    }
+
+    // Vertical offset for label alignment
+    const yOff = labelAlign === 'top' ? -3 : labelAlign === 'bottom' ? 3 : 0;
+
+    ctx.fillStyle = color;
+    ctx.fillText(label, lx, y + yOff);
+  }
+
   ctx.restore();
 }
+
 
 // 3 anchors stored as (entry, target, stop).
 // The rendered zones span from the leftmost point to the rightmost point.

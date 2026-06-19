@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDrawingStore } from '../state/drawingStore';
 import { toolLabel } from './tools';
-import type { DStyle, DPoint } from './types';
+import type { DStyle, DPoint, FibLevelConfig } from './types';
+import { DEFAULT_FIB_LEVELS } from './types';
 import './DrawingSettingsModal.css';
 
 const PRESET_COLORS = [
@@ -238,6 +239,137 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
               </>
             )}
 
+            {/* ── Fibonacci Retracement settings (TradingView parity) ── */}
+            {d.type === 'fib' && (() => {
+              const fibLevels: FibLevelConfig[] = s.fibLevels ?? DEFAULT_FIB_LEVELS.map((l) => ({ ...l }));
+              const updateFibLevel = (idx: number, patch: Partial<FibLevelConfig>) => {
+                const next = fibLevels.map((l, i) => (i === idx ? { ...l, ...patch } : l));
+                patchStyle({ fibLevels: next });
+              };
+              // Split levels into two columns (left and right)
+              const half = Math.ceil(fibLevels.length / 2);
+              const leftCol = fibLevels.slice(0, half);
+              const rightCol = fibLevels.slice(half);
+              return (
+                <>
+                  {/* Extend */}
+                  <div className="dsm-row">
+                    <label className="dsm-label">Extend</label>
+                    <select
+                      className="dsm-select"
+                      value={s.fibExtend ?? 'none'}
+                      onChange={(e) => patchStyle({ fibExtend: e.target.value as DStyle['fibExtend'] })}
+                    >
+                      <option value="none">Don't extend</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </div>
+
+                  {/* Fib levels grid — two columns */}
+                  <div className="dsm-fib-grid">
+                    <div className="dsm-fib-col">
+                      {leftCol.map((lc, i) => (
+                        <div key={i} className="dsm-fib-level-row">
+                          <input
+                            type="checkbox"
+                            checked={lc.enabled}
+                            onChange={(e) => updateFibLevel(i, { enabled: e.target.checked })}
+                          />
+                          <input
+                            type="number"
+                            className="dsm-fib-value"
+                            step="0.001"
+                            value={lc.level}
+                            onChange={(e) => updateFibLevel(i, { level: parseFloat(e.target.value) || lc.level })}
+                          />
+                          <input
+                            type="color"
+                            className="dsm-fib-color"
+                            value={lc.color}
+                            onChange={(e) => updateFibLevel(i, { color: e.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="dsm-fib-col">
+                      {rightCol.map((lc, ri) => {
+                        const idx = half + ri;
+                        return (
+                          <div key={idx} className="dsm-fib-level-row">
+                            <input
+                              type="checkbox"
+                              checked={lc.enabled}
+                              onChange={(e) => updateFibLevel(idx, { enabled: e.target.checked })}
+                            />
+                            <input
+                              type="number"
+                              className="dsm-fib-value"
+                              step="0.001"
+                              value={lc.level}
+                              onChange={(e) => updateFibLevel(idx, { level: parseFloat(e.target.value) || lc.level })}
+                            />
+                            <input
+                              type="color"
+                              className="dsm-fib-color"
+                              value={lc.color}
+                              onChange={(e) => updateFibLevel(idx, { color: e.target.value })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Toggle options */}
+                  <div className="dsm-fib-toggles">
+                    <label className="dsm-check">
+                      <input type="checkbox" checked={s.fibShowBackground !== false} onChange={(e) => patchStyle({ fibShowBackground: e.target.checked })} />
+                      Background
+                    </label>
+                    <label className="dsm-check">
+                      <input type="checkbox" checked={!!s.fibReverse} onChange={(e) => patchStyle({ fibReverse: e.target.checked })} />
+                      Reverse
+                    </label>
+                    <label className="dsm-check">
+                      <input type="checkbox" checked={s.fibShowPrices !== false} onChange={(e) => patchStyle({ fibShowPrices: e.target.checked })} />
+                      Prices
+                    </label>
+                    <label className="dsm-check">
+                      <input type="checkbox" checked={s.fibShowLevels !== false} onChange={(e) => patchStyle({ fibShowLevels: e.target.checked })} />
+                      Levels
+                    </label>
+                  </div>
+
+                  {/* Labels position */}
+                  <div className="dsm-row">
+                    <label className="dsm-label">Labels</label>
+                    <select className="dsm-select" value={s.fibLabelPosition ?? 'left'} onChange={(e) => patchStyle({ fibLabelPosition: e.target.value as DStyle['fibLabelPosition'] })}>
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                    <select className="dsm-select" value={s.fibLabelAlign ?? 'top'} onChange={(e) => patchStyle({ fibLabelAlign: e.target.value as DStyle['fibLabelAlign'] })}>
+                      <option value="top">Top</option>
+                      <option value="middle">Middle</option>
+                      <option value="bottom">Bottom</option>
+                    </select>
+                  </div>
+
+                  {/* Font size */}
+                  <div className="dsm-row">
+                    <label className="dsm-label">Font size</label>
+                    <select className="dsm-select" value={s.fibFontSize ?? 11} onChange={(e) => patchStyle({ fibFontSize: parseInt(e.target.value) })}>
+                      {[8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24].map((sz) => (
+                        <option key={sz} value={sz}>{sz}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              );
+            })()}
+
           </div>
         )}
 
@@ -316,7 +448,7 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
                     <input
                       type="number" step="0.01"
                       className="dsm-coord-input"
-                      value={p.price}
+                      value={Number(p.price.toFixed(2))}
                       onChange={(e) => {
                         const pts = localPoints.map((x, j) => j === i ? { ...x, price: parseFloat(e.target.value) || x.price } : x);
                         setLocalPoints(pts);

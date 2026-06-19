@@ -306,3 +306,94 @@
   cursor: pointer;
 }
 .dsm-cancel:hover { background: var(--border); }
+
+/* ── Fib retracement settings (TradingView parity) ─────────────────── */
+
+/* Widen modal when fib settings are shown */
+.dsm-modal:has(.dsm-fib-grid) {
+  width: 480px;
+}
+
+.dsm-modal:has(.dsm-fib-grid) .dsm-body {
+  max-height: 520px;
+}
+
+/* Select dropdown */
+.dsm-select {
+  padding: 5px 8px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  min-width: 100px;
+}
+.dsm-select:focus { outline: none; border-color: var(--accent); }
+
+/* Two-column fib levels grid */
+.dsm-fib-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.dsm-fib-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsm-fib-level-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.dsm-fib-level-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.dsm-fib-value {
+  width: 60px;
+  padding: 4px 6px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.dsm-fib-value:focus { outline: none; border-color: var(--accent); }
+
+/* Hide spin buttons on the fib value inputs */
+.dsm-fib-value::-webkit-inner-spin-button,
+.dsm-fib-value::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.dsm-fib-value { -moz-appearance: textfield; }
+
+.dsm-fib-color {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  flex: none;
+}
+
+/* Toggle options row */
+.dsm-fib-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+  padding: 4px 0;
+}

@@ -7,6 +7,13 @@ export interface DPoint {
   price: number;
 }
 
+// ── Fibonacci level configuration (per-drawing, per-level) ─────────────
+export interface FibLevelConfig {
+  level: number;       // e.g. 0, 0.236, 0.382, …, 4.236
+  enabled: boolean;    // whether this level line is drawn
+  color: string;       // per-level line + label color
+}
+
 export type DrawingType =
   | 'trendline'
   | 'ray'
@@ -104,6 +111,16 @@ export interface DStyle {
   vwapBands?: boolean;       // draw ±1σ / ±2σ bands on anchored VWAP
   upColor?: string;          // volume-profile bullish color
   downColor?: string;        // volume-profile bearish color
+  // ── Fibonacci Retracement options (TradingView parity) ───────────────
+  fibLevels?: FibLevelConfig[];                          // per-level enable + color
+  fibExtend?: 'none' | 'left' | 'right' | 'both';       // line extension mode
+  fibReverse?: boolean;                                  // swap 0↔1 direction
+  fibShowPrices?: boolean;                               // show price values
+  fibShowLevels?: boolean;                               // show level ratios
+  fibShowBackground?: boolean;                           // fill bands between levels
+  fibLabelPosition?: 'left' | 'center' | 'right';       // label horizontal pos
+  fibLabelAlign?: 'top' | 'middle' | 'bottom';          // label vertical align
+  fibFontSize?: number;                                  // label font size
 }
 
 export interface Drawing {
@@ -164,8 +181,64 @@ export const DEFAULT_STYLE: DStyle = {
   textColor: '#d1d4dc',
 };
 
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.618];
+export const FIB_LEVELS = [
+  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1,
+  1.272, 1.414, 1.618, 2, 2.272, 2.414, 2.618,
+  3, 3.272, 3.414, 3.618, 4, 4.236, 4.272, 4.414, 4.618, 4.764,
+];
+
 export const FIB_COLORS: Record<number, string> = {
-  0: '#787b86', 0.236: '#ef5350', 0.382: '#ff9800', 0.5: '#4caf50',
-  0.618: '#26a69a', 0.786: '#089981', 1: '#787b86', 1.272: '#9c27b0', 1.618: '#2962ff', 2.618: '#9c27b0',
+  0:     '#787b86',
+  0.236: '#ef5350',
+  0.382: '#ff9800',
+  0.5:   '#4caf50',
+  0.618: '#26a69a',
+  0.786: '#089981',
+  1:     '#787b86',
+  1.272: '#9c27b0',
+  1.414: '#9c27b0',
+  1.618: '#2962ff',
+  2:     '#e91e63',
+  2.272: '#e91e63',
+  2.414: '#e91e63',
+  2.618: '#9c27b0',
+  3:     '#673ab7',
+  3.272: '#673ab7',
+  3.414: '#673ab7',
+  3.618: '#2962ff',
+  4:     '#00bcd4',
+  4.236: '#00bcd4',
+  4.272: '#00bcd4',
+  4.414: '#00bcd4',
+  4.618: '#00bcd4',
+  4.764: '#00bcd4',
 };
+
+/** TradingView-default enabled states for fib levels. */
+export const DEFAULT_FIB_LEVELS: FibLevelConfig[] = [
+  { level: 0,     enabled: true,  color: '#787b86' },
+  { level: 0.236, enabled: true,  color: '#ef5350' },
+  { level: 0.382, enabled: true,  color: '#ff9800' },
+  { level: 0.5,   enabled: true,  color: '#4caf50' },
+  { level: 0.618, enabled: true,  color: '#26a69a' },
+  { level: 0.786, enabled: true,  color: '#089981' },
+  { level: 1,     enabled: true,  color: '#787b86' },
+  { level: 1.272, enabled: false, color: '#9c27b0' },
+  { level: 1.414, enabled: false, color: '#9c27b0' },
+  { level: 1.618, enabled: true,  color: '#2962ff' },
+  { level: 2,     enabled: false, color: '#e91e63' },
+  { level: 2.272, enabled: false, color: '#e91e63' },
+  { level: 2.414, enabled: false, color: '#e91e63' },
+  { level: 2.618, enabled: true,  color: '#9c27b0' },
+  { level: 3,     enabled: false, color: '#673ab7' },
+  { level: 3.272, enabled: false, color: '#673ab7' },
+  { level: 3.414, enabled: false, color: '#673ab7' },
+  { level: 3.618, enabled: true,  color: '#2962ff' },
+  { level: 4,     enabled: false, color: '#00bcd4' },
+  { level: 4.236, enabled: true,  color: '#00bcd4' },
+  { level: 4.272, enabled: false, color: '#00bcd4' },
+  { level: 4.414, enabled: false, color: '#00bcd4' },
+  { level: 4.618, enabled: false, color: '#00bcd4' },
+  { level: 4.764, enabled: false, color: '#00bcd4' },
+];
+

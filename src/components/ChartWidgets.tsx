@@ -619,9 +619,9 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
     const expiryStr = posExpiry ? new Date(posExpiry).toISOString().split('T')[0] : undefined;
     let exitOrder: import('../state/slTpPopupStore').ExitLimitOrder;
     if (isOption) {
-      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'option', underlying: posUnderlying, expiry: expiryStr, strike: posStrike, option_type: posOptType };
+      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'option', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NFO', underlying: posUnderlying, expiry: expiryStr, strike: posStrike, option_type: posOptType };
     } else if (isFuture) {
-      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'future', underlying: posUnderlying, expiry: expiryStr };
+      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'future', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NFO', underlying: posUnderlying, expiry: expiryStr };
     } else {
       exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'equity', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NSE', underlying: p.trading_symbol };
     }
@@ -639,9 +639,9 @@ function BrokerPosRow({ p }: { p: BrokerPosition }) {
     const expiryStr = posExpiry ? new Date(posExpiry).toISOString().split('T')[0] : undefined;
     let exitOrder: import('../state/slTpPopupStore').ExitLimitOrder;
     if (isOption) {
-      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'option', underlying: posUnderlying, expiry: expiryStr, strike: posStrike, option_type: posOptType };
+      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'option', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NFO', underlying: posUnderlying, expiry: expiryStr, strike: posStrike, option_type: posOptType };
     } else if (isFuture) {
-      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'future', underlying: posUnderlying, expiry: expiryStr };
+      exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'future', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NFO', underlying: posUnderlying, expiry: expiryStr };
     } else {
       exitOrder = { qty: Math.abs(qty), transaction_type: txType, product: prod, segment: 'equity', tradingsymbol: p.trading_symbol, exchange: p.exchange || 'NSE', underlying: p.trading_symbol };
     }

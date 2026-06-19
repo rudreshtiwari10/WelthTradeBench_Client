@@ -87,6 +87,7 @@ export const chartOptions: DeepPartial<ChartOptions> = {
     rightOffset: 6,
     barSpacing: 7,
     tickMarkFormatter: istTickMarkFormatter,
+    shiftVisibleRangeOnNewBar: false,
   },
   handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
   handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },

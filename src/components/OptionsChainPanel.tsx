@@ -317,14 +317,25 @@ export function OptionsChainPanel() {
     setOrderType(activeBroker === 'kite' ? 'LIMIT' : 'MARKET');
   }, [activeBroker]);
 
-  // Pre-fill limit price from selected row's LTP when a pending order is staged
+  // Pre-fill limit price from selected row's LTP when a pending order is staged.
+  // For Kite, add a 1 % buffer (rounded to 0.05 tick) so the order fills
+  // immediately at near-market price without being a pure MARKET order.
   useEffect(() => {
     if (!pendingOrder) return;
     const ltp = pendingOrder.optType === 'CE'
       ? pendingOrder.row.callLtp
       : pendingOrder.row.putLtp;
-    if (ltp > 0) setLimitPrice(ltp);
-  }, [pendingOrder]);
+    if (ltp <= 0) return;
+    if (isKite) {
+      const tick = 0.05;
+      const protected_ = side === 'buy'
+        ? Math.ceil(ltp * 1.01 / tick) * tick   // 1% above for buy — ensures fill
+        : Math.floor(ltp * 0.99 / tick) * tick; // 1% below for sell
+      setLimitPrice(parseFloat(protected_.toFixed(2)));
+    } else {
+      setLimitPrice(ltp);
+    }
+  }, [pendingOrder, isKite, side]);
 
   // ── Place trade ───────────────────────────────────────────────────────
   const placeTrade = async (row: DerivChainRow, optType: 'CE' | 'PE') => {

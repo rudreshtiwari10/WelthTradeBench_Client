@@ -7,7 +7,7 @@
  *  4. Shows estimated option P&L at each SL/TP level (Black-Scholes).
  *  5. Provides an inline lot-size editor for the exit qty.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineStyle } from 'lightweight-charts';
 import { useChartApi } from '../chart/ChartContext';
 import { usePriceLinesStore } from '../state/priceLinesStore';
@@ -144,78 +144,107 @@ export function PositionLines() {
   }, [activeLines, ready]);
 
   // ── 3. SL / TP trigger — monitor live ticks ───────────────────────────
-  const activeLinesRef = useRef(activeLines);
-  activeLinesRef.current = activeLines;
-  // Positions whose SL/TP has already fired. Synchronous guard so a burst of
-  // ticks (Kite streams fast and the LTP jitters around the level) cannot fire
-  // the exit more than once before removeByPos lands on the next render.
-  const triggeredRef        = useRef<Set<string>>(new Set());
-  // Tracks exitOrderIds we've already auto-cleaned to avoid double processing
-  const processedOrdersRef  = useRef<Set<string>>(new Set());
+  // allLinesRef gives tick callbacks access to the latest lines without
+  // stale closures and without re-subscribing on every line change.
+  const allLinesRef = useRef(allLines);
+  allLinesRef.current = allLines;
+
+  // Positions whose SL/TP has already fired this session. Synchronous guard
+  // so a burst of ticks cannot fire the exit more than once.
+  const triggeredRef       = useRef<Set<string>>(new Set());
+  // Tracks exitOrderIds already handled by the auto-cleanup (3b).
+  const processedOrdersRef = useRef<Set<string>>(new Set());
+
+  // Fix 2: clear stale positionIds from triggeredRef when lines are removed.
+  // Without this, re-trading the same contract (same instrument_token →
+  // same positionId) permanently blocks the new trade's SL/TP.
+  useEffect(() => {
+    const activeIds = new Set(allLines.map(l => l.positionId));
+    for (const id of Array.from(triggeredRef.current)) {
+      if (!activeIds.has(id)) triggeredRef.current.delete(id);
+    }
+  }, [allLines]);
+
+  // Fix 1 + 3: subscribe per underlying so SL/TP monitors ALL open positions
+  // regardless of which symbol is currently displayed on the chart.
+  // The subscription set only changes when a new underlying is added/removed.
+  const underlyingsKey = useMemo(
+    () => [...new Set(allLines.map(l => l.underlying).filter(Boolean))].sort().join(','),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allLines],
+  );
 
   useEffect(() => {
-    if (!currentSymbol) return;
-    const unsub = liveFeed.subscribe(currentSymbol, (tick) => {
-      const ltp = tick.ltp;
+    const underlyings = underlyingsKey ? underlyingsKey.split(',') : [];
+    if (!underlyings.length) return;
 
-      for (const line of activeLinesRef.current) {
-        if (line.type === 'entry') continue;
-        if (line.type === 'exit') continue;  // LIMIT exit already placed on broker — broker handles it
+    const unsubs = underlyings.map((underlying) =>
+      liveFeed.subscribe(underlying, (tick) => {
+        const ltp = tick.ltp;
 
-        // Resolve trigger direction: explicit flag or fall back to side-based logic.
-        const triggerAbove = line.triggerAbove
-          ?? (line.type === 'sl' ? line.side !== 'buy' : line.side === 'buy');
+        for (const line of allLinesRef.current) {
+          if (line.underlying !== underlying) continue;
+          if (line.type === 'entry') continue;
+          if (line.type === 'exit') continue; // LIMIT exit on broker — broker handles fill
 
-        // Fire when price has REACHED or PASSED the level (not only on a live
-        // crossing) so gaps, reloads and already-breached levels still trigger.
-        const hit = triggerAbove ? ltp >= line.price : ltp <= line.price;
+          const triggerAbove = line.triggerAbove
+            ?? (line.type === 'sl' ? line.side !== 'buy' : line.side === 'buy');
 
-        if (!hit) continue;
-        if (triggeredRef.current.has(line.positionId)) continue;  // already exited
+          const hit = triggerAbove ? ltp >= line.price : ltp <= line.price;
+          if (!hit) continue;
+          if (triggeredRef.current.has(line.positionId)) continue;
 
-        const isSl   = line.type === 'sl';
-        const pnlEst = estimatePnl(line);
-        const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
+          const isSl   = line.type === 'sl';
+          const pnlEst = estimatePnl(line);
+          const pnlStr = pnlEst != null ? ` · ${fmtPnl(pnlEst)}` : '';
 
-        triggeredRef.current.add(line.positionId);
+          triggeredRef.current.add(line.positionId);
+          pushToast(`${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`);
 
-        pushToast(
-          `${isSl ? '🛑 SL HIT' : '🎯 TP HIT'}: ${line.symbol} @ ₹${ltp.toFixed(2)}${pnlStr}`
-        );
+          const isLiveBroker = useBrokerStore.getState().source !== 'paper';
 
-        const isLiveBroker = useBrokerStore.getState().source !== 'paper';
-
-        if (isLiveBroker) {
-          const rp = line.exitOrderReParams;
-          if (rp && rp.segment === 'option') {
-            // Options: SL/TP is on the index axis — can't pre-place a LIMIT on the broker.
-            // Fire a MARKET order now that the index has actually crossed the level.
-            useBrokerStore.getState().placeOrder({
-              broker: rp.broker,
-              transaction_type: rp.transaction_type,
-              order_type: 'MARKET',
-              qty: rp.qty,
-              product: rp.product,
-              segment: 'option',
-              underlying: rp.underlying,
-              expiry: rp.expiry,
-              strike: rp.strike,
-              option_type: rp.option_type,
-            }).catch(() => {});
+          if (isLiveBroker) {
+            const rp = line.exitOrderReParams;
+            if (rp && rp.segment === 'option') {
+              // Fix 3 + 4: send tradingsymbol so backend skips instrument lookup.
+              // Remove chart lines only AFTER broker confirms — undo guard on failure.
+              const capturedPosId  = line.positionId;
+              const capturedSymbol = line.symbol;
+              useBrokerStore.getState().placeOrder({
+                broker:           rp.broker,
+                transaction_type: rp.transaction_type,
+                order_type:       'MARKET',
+                qty:              rp.qty,
+                product:          rp.product,
+                segment:          'option',
+                tradingsymbol:    rp.tradingsymbol,
+                exchange:         rp.exchange || 'NFO',
+                underlying:       rp.underlying,
+                expiry:           rp.expiry,
+                strike:           rp.strike,
+                option_type:      rp.option_type,
+              }).then(() => {
+                usePriceLinesStore.getState().removeByPosition(capturedPosId);
+                pushToast(`MARKET exit placed: ${capturedSymbol}`);
+              }).catch((err: unknown) => {
+                triggeredRef.current.delete(capturedPosId); // allow SL/TP to retry
+                const msg = err instanceof Error ? err.message : String(err);
+                pushToast(`EXIT FAILED for ${capturedSymbol}: ${msg} — SL/TP still active`);
+              });
+            }
+            // Equity/futures: LIMIT order already on broker; 3b removes lines on fill.
+          } else {
+            // Paper mode: close immediately.
+            removePosition(line.positionId);
+            removeByPos(line.positionId);
           }
-          // For equity/futures with LIMIT orders: broker handles fill automatically;
-          // auto-cleanup in effect 3b removes lines once the order is confirmed filled.
-        } else {
-          // Paper mode: remove position immediately when SL/TP level is hit
-          removePosition(line.positionId);
+          break;
         }
+      })
+    );
 
-        removeByPos(line.positionId);
-        break;
-      }
-    });
-    return () => { unsub(); };
-  }, [currentSymbol, removePosition, removeByPos, pushToast]);
+    return () => unsubs.forEach((u) => u());
+  }, [underlyingsKey, removePosition, removeByPos, pushToast]);
 
   // ── 3b. Auto-cleanup: remove position lines when LIMIT exit orders fill ──
   // The broker polls every 5 s; when an exit LIMIT order becomes "complete" or
