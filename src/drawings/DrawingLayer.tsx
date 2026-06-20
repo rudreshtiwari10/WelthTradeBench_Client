@@ -19,6 +19,12 @@ const toolDefByType = (type: string) => _ALL_TOOL_DEFS.find((t) => t.tool === ty
 // Data-driven tools render from candle data rather than projected geometry.
 const DATA_TOOLS = new Set<DrawingType>(['anchored_vwap', 'fixed_vp', 'anchored_vp']);
 
+// Line-family tools that get the quick "add text" affordance on hover.
+const LINE_TEXT_TYPES = new Set<DrawingType>([
+  'trendline', 'ray', 'extended', 'hline', 'hray', 'vline', 'arrow',
+  'infoline', 'trendangle', 'crossline',
+]);
+
 const CURSOR_TOOLS: Tool[] = ['cursor', 'dot', 'arrowcursor', 'eraser'];
 const isDrawTool = (t: Tool): t is DrawingType => !CURSOR_TOOLS.includes(t);
 
@@ -56,6 +62,14 @@ export function DrawingLayer() {
   const mousePx = useRef<Pt | null>(null);
   // ID of drawing currently under the mouse (for hover highlight)
   const hoveredId = useRef<string | null>(null);
+
+  // Quick "add text" affordance shown when hovering a line drawing.
+  const [hoverText, setHoverText] = useState<{ id: string; x: number; y: number } | null>(null);
+  const hoverTextRef = useRef(hoverText); hoverTextRef.current = hoverText;
+  const overBtnRef = useRef(false);   // true while the cursor is over the hover button
+  // Inline editor for a line's text label (the quick shortcut).
+  const [lineTextEdit, setLineTextEdit] = useState<{ id: string; x: number; y: number } | null>(null);
+  const lineTextEditRef = useRef(lineTextEdit); lineTextEditRef.current = lineTextEdit;
 
   // Keep latest store values for event handlers without re-binding listeners.
   const s = useRef(store); s.current = store;
@@ -244,6 +258,7 @@ export function DrawingLayer() {
       if (isDrawTool(tool) || draft.current || drag.current) {
         setCapture(true);
         parent.style.cursor = 'none';   // canvas renders its own crosshair
+        if (hoverTextRef.current) setHoverText(null);
         return;
       }
       const m = { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -259,10 +274,37 @@ export function DrawingLayer() {
         }
       }
       hoveredId.current = hitId;
-      setCapture(hitId !== null);
+      setCapture(hitId !== null || overBtnRef.current);
       parent.style.cursor = hitId ? (tool === 'eraser' ? 'pointer' : 'move') : '';
+
+      // Quick add-text affordance: show a button centered on a hovered line.
+      if (lineTextEditRef.current) {
+        // editor open — leave it alone
+      } else if (hitId) {
+        const d = s.current.drawings.find((x) => x.id === hitId);
+        if (d && LINE_TEXT_TYPES.has(d.type)) {
+          if (hoverTextRef.current?.id !== hitId) {
+            const pp = d.points.map(project).filter(Boolean) as Pt[];
+            const a = pp.length >= 2 ? { x: (pp[0].x + pp[1].x) / 2, y: (pp[0].y + pp[1].y) / 2 } : pp[0];
+            // Offset the button ABOVE the line so clicking the line still selects it.
+            if (a) setHoverText({ id: hitId, x: a.x, y: a.y - 18 });
+          }
+        } else if (hoverTextRef.current) {
+          setHoverText(null);
+        }
+      } else if (hoverTextRef.current) {
+        // Off the line: keep the button alive if the cursor is over it or still
+        // near it (so it doesn't vanish in the gap between line and button).
+        const ht = hoverTextRef.current;
+        const mp = mousePx.current;
+        const near = mp ? Math.hypot(mp.x - ht.x, mp.y - ht.y) < 30 : false;
+        if (!overBtnRef.current && !near) setHoverText(null);
+      }
     };
-    const onParentLeave = () => { mousePx.current = null; hoveredId.current = null; parent.style.cursor = ''; };
+    const onParentLeave = () => {
+      mousePx.current = null; hoveredId.current = null; parent.style.cursor = '';
+      if (!overBtnRef.current && hoverTextRef.current) setHoverText(null);
+    };
     parent.addEventListener('mousemove', onParentMove);
     parent.addEventListener('mouseleave', onParentLeave);
     return () => {
@@ -601,6 +643,51 @@ export function DrawingLayer() {
 
       {/* ── Drawing settings modal (double-click or Settings button) ── */}
       {drawingSettingsId && <DrawingSettingsModal drawingId={drawingSettingsId} onClose={closeDrawingSettings} />}
+
+      {/* ── Quick "add text" button on hovered line ── */}
+      {hoverText && !lineTextEdit && (() => {
+        const d = store.drawings.find((x) => x.id === hoverText.id);
+        if (!d) return null;
+        return (
+          <button
+            className="draw-hover-text-btn"
+            style={{ left: hoverText.x, top: hoverText.y }}
+            title={d.text ? 'Edit line text' : 'Add text to line'}
+            onMouseEnter={() => { overBtnRef.current = true; }}
+            onMouseLeave={() => { overBtnRef.current = false; }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setLineTextEdit({ id: hoverText.id, x: hoverText.x, y: hoverText.y });
+              setHoverText(null);
+            }}
+          >
+            {d.text ? '✎' : 'T+'}
+          </button>
+        );
+      })()}
+
+      {/* ── Inline editor for a line's text label ── */}
+      {lineTextEdit && (
+        <input
+          ref={(el) => { if (el) setTimeout(() => { el.focus(); el.select(); }, 10); }}
+          className="draw-text-input"
+          placeholder="Line text, Enter to save"
+          defaultValue={store.drawings.find((x) => x.id === lineTextEdit.id)?.text ?? ''}
+          style={{ left: lineTextEdit.x, top: lineTextEdit.y }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+              s.current.updateDrawing(lineTextEdit.id, { text: (e.target as HTMLInputElement).value || undefined });
+              setLineTextEdit(null);
+            }
+            if (e.key === 'Escape') setLineTextEdit(null);
+          }}
+          onBlur={(e) => {
+            s.current.updateDrawing(lineTextEdit.id, { text: e.target.value || undefined });
+            setLineTextEdit(null);
+          }}
+        />
+      )}
 
       {/* ── Inline text / callout editor ── */}
       {textInput && (

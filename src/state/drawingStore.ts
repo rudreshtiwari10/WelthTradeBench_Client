@@ -18,6 +18,7 @@ export interface StyleTemplate {
   id: string;
   name: string;
   style: DStyle;
+  toolType?: string;   // tool this template was saved from (TradingView scopes per type)
 }
 
 /**
@@ -124,7 +125,7 @@ interface RawDrawingState {
   isFavorite: (label: string) => boolean;
   setFavorites: (favs: FavDef[]) => void;
 
-  saveTemplate: (name: string) => void;
+  saveTemplate: (name: string, style: DStyle, toolType?: string) => void;
   applyTemplate: (key: string, id: string) => void;
   deleteTemplate: (id: string) => void;
 
@@ -366,9 +367,8 @@ export const useDrawingStoreRaw = create<RawDrawingState>((set, get) => ({
   isFavorite: (label) => get().favorites.some((f) => f.label === label),
   setFavorites: (favs) => { saveFavs(favs); set({ favorites: favs }); },
 
-  saveTemplate: (name) => {
-    const style = { ...get().defaultStyle };
-    const t: StyleTemplate = { id: tmplId(), name, style };
+  saveTemplate: (name, style, toolType) => {
+    const t: StyleTemplate = { id: tmplId(), name, style: { ...style }, toolType };
     set((s) => { const arr = [...s.templates, t]; saveTmpls(arr); return { templates: arr }; });
   },
 
@@ -494,7 +494,7 @@ export interface DrawingView {
   isFavorite: (label: string) => boolean;
   setFavorites: (favs: FavDef[]) => void;
 
-  saveTemplate: (name: string) => void;
+  saveTemplate: (name: string, style: DStyle, toolType?: string) => void;
   applyTemplate: (id: string) => void;
   deleteTemplate: (id: string) => void;
 

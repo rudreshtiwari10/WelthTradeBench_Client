@@ -65,6 +65,7 @@ export type IconName =
   | 'chevronDown'
   | 'theme'
   | 'grid'
+  | 'gridPlus'
   | 'splitV'
   | 'splitH'
   | 'expand'
@@ -399,6 +400,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <rect x="4" y="4" width="20" height="20" rx="1.5" />
       <line x1="14" y1="4" x2="14" y2="24" />
       <line x1="4" y1="14" x2="24" y2="14" />
+    </>
+  ),
+  gridPlus: (
+    <>
+      <rect x="5" y="5" width="8" height="8" rx="1" />
+      <rect x="15" y="5" width="8" height="8" rx="1" />
+      <rect x="5" y="15" width="8" height="8" rx="1" />
+      <line x1="19" y1="15.5" x2="19" y2="22.5" />
+      <line x1="15.5" y1="19" x2="22.5" y2="19" />
     </>
   ),
   splitV: (

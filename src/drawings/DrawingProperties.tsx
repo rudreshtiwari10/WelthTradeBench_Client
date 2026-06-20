@@ -16,6 +16,7 @@ export function DrawingToolbarState() {
     drawings, selectedId, multiSelected, setStyle, removeDrawing, select,
     updateDrawing, duplicateDrawing, bringToFront, sendToBack,
     templates, saveTemplate, applyTemplate, deleteTemplate,
+    defaultStyle, setDefaultStyle,
     copySelected, removeMultiSelected, undo, redo, history, future,
   } = useDrawingStore();
   const { openDrawingSettings } = useUiStore();
@@ -27,9 +28,14 @@ export function DrawingToolbarState() {
   const d = drawings.find((x) => x.id === selectedId);
   if (!d) return null;
 
+  // Templates are shared across ALL tools — any saved style can be applied to
+  // any drawing. (toolType is still stored, just not used to filter.)
+  const visibleTemplates = templates;
+
   const handleSaveTemplate = () => {
-    const name = savingName.trim() || `Style ${templates.length + 1}`;
-    saveTemplate(name);
+    if (!d) return;
+    const name = savingName.trim() || `Style ${visibleTemplates.length + 1}`;
+    saveTemplate(name, d.style, d.type);   // save the SELECTED drawing's actual style
     setSavingName('');
     setShowSaveInput(false);
     setTmplOpen(false);
@@ -86,20 +92,20 @@ export function DrawingToolbarState() {
 
       {/* Templates dropdown */}
       <div className="dp-tmpl-wrap">
-        <button className="dp-btn" title="Style templates" onClick={() => setTmplOpen((o) => !o)}>
-          <Icon name="layout" size={16} />
+        <button className="dp-btn" title="Templates" onClick={() => setTmplOpen((o) => !o)}>
+          <Icon name="gridPlus" size={16} />
         </button>
         {tmplOpen && (
           <div className="dp-tmpl-menu">
-            <div className="dp-tmpl-head">Style Templates</div>
-            {templates.length === 0 && <div className="dp-tmpl-empty">No saved templates</div>}
-            {templates.map((t) => (
+            <div className="dp-tmpl-head">Templates</div>
+            {visibleTemplates.length === 0 && <div className="dp-tmpl-empty">No saved templates</div>}
+            {visibleTemplates.map((t) => (
               <div key={t.id} className="dp-tmpl-row">
                 <span
                   className="dp-tmpl-dot"
                   style={{ background: t.style.color }}
                 />
-                <button className="dp-tmpl-name" onClick={() => { applyTemplate(t.id); setTmplOpen(false); }}>{t.name}</button>
+                <button className="dp-tmpl-name" title="Apply this template" onClick={() => { applyTemplate(t.id); setTmplOpen(false); }}>{t.name}</button>
                 <button className="dp-tmpl-del" title="Delete template" onClick={() => deleteTemplate(t.id)}>×</button>
               </div>
             ))}
@@ -117,8 +123,11 @@ export function DrawingToolbarState() {
                 <button className="dp-tmpl-confirm" onClick={handleSaveTemplate}>Save</button>
               </div>
             ) : (
-              <button className="dp-tmpl-add" onClick={() => setShowSaveInput(true)}>+ Save current style</button>
+              <button className="dp-tmpl-add" onClick={() => setShowSaveInput(true)}>+ Save drawing template as…</button>
             )}
+            <div className="dp-tmpl-sep" />
+            <button className="dp-tmpl-add" title="Reset this drawing to the default style" onClick={() => { setStyle(d.id, { ...defaultStyle }); setTmplOpen(false); }}>↺ Apply default</button>
+            <button className="dp-tmpl-add" title="Make this style the default for new drawings" onClick={() => { setDefaultStyle(d.style); setTmplOpen(false); }}>★ Save as default</button>
           </div>
         )}
       </div>
