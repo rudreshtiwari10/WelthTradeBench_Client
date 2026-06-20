@@ -4,7 +4,7 @@ import { useDrawingStore, type Tool } from '../state/drawingStore';
 import { useUiStore } from '../state/uiStore';
 import { usePanelId } from '../state/PanelContext';
 import { usePanelsStore } from '../state/panelsStore';
-import { renderDrawing, renderHoverHighlight, hitTest, handleHit, type Pt } from './geometry';
+import { renderDrawing, renderHoverHighlight, hitTest, handleHit, getRectHandles, type Pt } from './geometry';
 import { POINT_COUNT, EW_LABELS, type DPoint, type Drawing, type DrawingType } from './types';
 import { TOOL_GROUPS, groupTools } from './tools';
 import { DrawingSettingsModal } from './DrawingSettingsModal';
@@ -55,7 +55,7 @@ export function DrawingLayer() {
   const draft = useRef<{ type: DrawingType; points: DPoint[] } | null>(null);
   const cursorPt = useRef<DPoint | null>(null);
   const drag = useRef<{ id: string; handle: number; start: Pt; orig: DPoint[]; cloned?: boolean } | null>(null);
-  const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
+  const sizeRef = useRef({ w: 0, h: 0, dpr: 1, plotW: 0 });
   const shiftRef = useRef(false);
   const altRef = useRef(false);
   // Canvas-relative pixel position of the mouse — used to draw the TV-style crosshair
@@ -141,32 +141,62 @@ export function DrawingLayer() {
         // Env for data-driven tools (VWAP / volume profile) — candles + converters.
         const env = { candles: candlesRef.current, toX, toY };
 
+        // ── Get chart plot-area width (w minus the right price axis) ─────
+        // This ensures no drawing is ever rendered over the price scale.
+        let plotW = w;
+        try {
+          const psWidth = (chartRef.current?.priceScale('right') as any)?.width?.() ?? 0;
+          if (psWidth > 0) plotW = Math.max(0, w - psWidth);
+        } catch { /* ignore */ }
+        sizeRef.current.plotW = plotW;
+
+        // ── Clip canvas to plot area — keeps all drawings within the chart ──
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, plotW, h);
+        ctx.clip();
+
+        const selectedYLabels: { y: number; text: string }[] = [];
+
         if (!s.current.hidden) {
           const multiSet = new Set(s.current.multiSelected);
           const currentInterval = intervalRef.current;
           for (const d of s.current.drawings) {
-            // Isolate each drawing: a throw in one renderer must never kill the
-            // whole rAF loop (which would make every drawing disappear).
             try {
-              if (d.hidden) continue;                    // ← per-drawing hide
-              // Timeframe visibility: if set, skip if current interval not included
+              if (d.hidden) continue;
               if (d.timeframeVisibility?.length && !d.timeframeVisibility.includes(currentInterval)) continue;
               const pts = d.points.map(project).filter(Boolean) as Pt[];
-              // Data-driven tools (VWAP/volume profile) self-render from candles and
-              // stay valid even when an anchor scrolls off the price axis.
+              const isSel = d.id === s.current.selectedId || multiSet.has(d.id);
+
               if (DATA_TOOLS.has(d.type)) {
-                renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price), env);
-                if (d.id === s.current.selectedId || multiSet.has(d.id)) drawHandles(ctx, pts, d.locked);
+                renderDrawing(ctx, d, pts, plotW, h, d.points.map((p) => p.price), env);
+                if (isSel) {
+                  drawHandles(ctx, pts, d.locked, d);
+                  if (plotW < w) {
+                    for (let i = 0; i < d.points.length; i++) {
+                      if (pts[i] && typeof d.points[i].price === 'number') {
+                        selectedYLabels.push({ y: pts[i].y, text: d.points[i].price.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 }) });
+                      }
+                    }
+                  }
+                }
                 continue;
               }
               if (pts.length < d.points.length) continue;
-              // Hover highlight — subtle glow before the actual drawing
               if (d.id === hoveredId.current && d.id !== s.current.selectedId) {
-                renderHoverHighlight(ctx, d, pts, w, h);
+                renderHoverHighlight(ctx, d, pts, plotW, h);
               }
-              renderDrawing(ctx, d, pts, w, h, d.points.map((p) => p.price), env);
-              const isSel = d.id === s.current.selectedId || multiSet.has(d.id);
-              if (isSel) drawHandles(ctx, pts, d.locked);
+              renderDrawing(ctx, d, pts, plotW, h, d.points.map((p) => p.price), env);
+              if (isSel) {
+                drawHandles(ctx, pts, d.locked, d);
+                if (plotW < w) {
+                  for (let i = 0; i < d.points.length; i++) {
+                    if (pts[i] && typeof d.points[i].price === 'number') {
+                      selectedYLabels.push({ y: pts[i].y, text: d.points[i].price.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 }) });
+                    }
+                  }
+                }
+              }
             } catch (err) {
               console.error('[DrawingLayer] render failed for', d.type, d.id, err);
             }
@@ -181,11 +211,32 @@ export function DrawingLayer() {
             const screen = pts.map(project).filter(Boolean) as Pt[];
             if (screen.length >= 1) {
               const tmp: Drawing = { id: 'draft', type: draft.current.type, points: pts, style: s.current.defaultStyle };
-              renderDrawing(ctx, tmp, screen, w, h, pts.map((p) => p.price), env);
+              renderDrawing(ctx, tmp, screen, plotW, h, pts.map((p) => p.price), env);
             }
           } catch (err) {
             console.error('[DrawingLayer] draft render failed', err);
           }
+        }
+
+        // Restore from clip so the crosshair can still span the full width
+        ctx.restore();
+
+        // ── Draw price axis labels for selected drawing anchors ──
+        if (selectedYLabels.length > 0) {
+          ctx.save();
+          ctx.font = '12px sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
+          const labelW = w - plotW;
+          const labelX = plotW + labelW / 2;
+
+          for (const { y, text } of selectedYLabels) {
+            ctx.fillStyle = '#2962ff'; // Selection blue
+            ctx.fillRect(plotW, y - 11, labelW, 22);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(text, labelX, y);
+          }
+          ctx.restore();
         }
 
         // ── TradingView-style dotted crosshair cursor ─────────────────
@@ -233,9 +284,10 @@ export function DrawingLayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  function drawHandles(ctx: CanvasRenderingContext2D, pts: Pt[], locked?: boolean) {
+  function drawHandles(ctx: CanvasRenderingContext2D, pts: Pt[], locked?: boolean, d?: Drawing) {
+    const handles = d?.type === 'rect' ? getRectHandles(pts) : pts;
     ctx.save();
-    for (const p of pts) {
+    for (const p of handles) {
       ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = locked ? '#ff9800' : '#fff'; ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = locked ? '#ff9800' : '#2962ff'; ctx.stroke();
@@ -282,11 +334,16 @@ export function DrawingLayer() {
         // editor open — leave it alone
       } else if (hitId) {
         const d = s.current.drawings.find((x) => x.id === hitId);
-        if (d && LINE_TEXT_TYPES.has(d.type)) {
+        if (d && (LINE_TEXT_TYPES.has(d.type) || d.type === 'rect') && !d.text) {
           if (hoverTextRef.current?.id !== hitId) {
             const pp = d.points.map(project).filter(Boolean) as Pt[];
-            const a = pp.length >= 2 ? { x: (pp[0].x + pp[1].x) / 2, y: (pp[0].y + pp[1].y) / 2 } : pp[0];
-            // Offset the button ABOVE the line so clicking the line still selects it.
+            let a: Pt | undefined;
+            if (d.type === 'rect' && pp.length >= 2) {
+              a = { x: Math.min(pp[0].x, pp[1].x) + 14, y: Math.min(pp[0].y, pp[1].y) };
+            } else {
+              a = pp.length >= 2 ? { x: (pp[0].x + pp[1].x) / 2, y: (pp[0].y + pp[1].y) / 2 } : pp[0];
+            }
+            // Offset the button ABOVE the shape/line so clicking it still selects the drawing.
             if (a) setHoverText({ id: hitId, x: a.x, y: a.y - 18 });
           }
         } else if (hoverTextRef.current) {
@@ -377,7 +434,7 @@ export function DrawingLayer() {
     const sel = s.current.drawings.find((d) => d.id === s.current.selectedId);
     if (sel && !s.current.locked && !sel.locked) {
       const pts = sel.points.map(project).filter(Boolean) as Pt[];
-      const hi = handleHit(pts, m);
+      const hi = handleHit(sel, pts, m);
       if (hi >= 0) {
         s.current.pushHistory();
         drag.current = { id: sel.id, handle: hi, start: m, orig: sel.points.map((p) => ({ ...p })) };
@@ -464,7 +521,20 @@ export function DrawingLayer() {
       const startDp = unproject(drag.current.start.x + r.left, drag.current.start.y + r.top);
       if (drag.current.handle >= 0) {
         const pts = drag.current.orig.map((p) => ({ ...p }));
-        pts[drag.current.handle] = dp;
+        if (d.type === 'rect') {
+          // Map 8 handles back to 2 anchor points
+          const hIdx = drag.current.handle;
+          if (hIdx === 0) { pts[0] = dp; }
+          else if (hIdx === 1) { pts[0].price = dp.price; }
+          else if (hIdx === 2) { pts[1].logical = dp.logical; pts[0].price = dp.price; }
+          else if (hIdx === 3) { pts[1].logical = dp.logical; }
+          else if (hIdx === 4) { pts[1] = dp; }
+          else if (hIdx === 5) { pts[1].price = dp.price; }
+          else if (hIdx === 6) { pts[0].logical = dp.logical; pts[1].price = dp.price; }
+          else if (hIdx === 7) { pts[0].logical = dp.logical; }
+        } else {
+          pts[drag.current.handle] = dp;
+        }
         s.current.updateDrawing(d.id, { points: pts });
       } else if (startDp) {
         const dl = dp.logical - startDp.logical, dpr = dp.price - startDp.price;
@@ -515,8 +585,13 @@ export function DrawingLayer() {
   function finishDraft() {
     const d = draft.current; if (!d) return;
     const style = { ...s.current.defaultStyle };
+    if ((d.type === 'rect' || d.type === 'ellipse') && style.color === '#ffffff') {
+      style.color = 'transparent'; // No border
+      style.fill = '#ffffff';      // White shaded area
+    }
     const preset = s.current.consumePendingText();
-    const text: string | undefined = preset ?? undefined;
+    // Fall back to defaultText (set when a template with text is applied)
+    const text: string | undefined = preset ?? s.current.defaultText ?? undefined;
     const drawing: Drawing = { id: newId(), type: d.type, points: d.points, style, text };
     s.current.addDrawing(drawing);
     draft.current = null; cursorPt.current = null;
@@ -661,7 +736,7 @@ export function DrawingLayer() {
               setHoverText(null);
             }}
           >
-            {d.text ? '✎' : 'T+'}
+            {d.text ? '✎ Edit Text' : 'Add Text +'}
           </button>
         );
       })()}

@@ -167,23 +167,53 @@ export function renderDrawing(
   ctx.restore();
 }
 
-// Draw a multi-line text label centered on a drawing's anchor span.
+// Draw a multi-line text label aligned PARALLEL to the drawing's line.
 function drawTextLabel(ctx: CanvasRenderingContext2D, d: Drawing, pts: Pt[]) {
   const s = d.style;
-  const anchor = pts.length > 1
+
+  // Default Midpoint anchor
+  let anchor = pts.length > 1
     ? { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
     : { x: pts[0].x, y: pts[0].y };
+
+  // Compute the line's angle so text sits parallel to it
+  let angle = 0;
+  let align: CanvasTextAlign = 'center';
+
+  if (d.type === 'rect' && pts.length >= 2) {
+    anchor = { x: Math.min(pts[0].x, pts[1].x) + 4, y: Math.min(pts[0].y, pts[1].y) };
+    angle = 0;
+    align = 'left';
+  } else if (pts.length >= 2) {
+    const dx = pts[1].x - pts[0].x;
+    const dy = pts[1].y - pts[0].y;
+    angle = Math.atan2(dy, dx);
+    // Keep text readable — never render upside-down
+    if (angle > Math.PI / 2)  angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+  }
+
   ctx.save();
   ctx.globalAlpha = s.opacity != null && s.opacity < 1 ? s.opacity : 1;
   ctx.setLineDash([]);
-  ctx.fillStyle = s.textColor || s.color;
-  ctx.font = `${s.fontSize || 14}px var(--font, sans-serif)`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.fillStyle = s.textColor || (s.color === 'transparent' ? '#ffffff' : s.color);
+  ctx.font = `600 ${s.fontSize || 14}px var(--font, sans-serif)`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'bottom';  // sit text just above the line
+
+  // Translate to anchor, rotate to match angle, then draw
+  ctx.translate(anchor.x, anchor.y);
+  ctx.rotate(angle);
+
   const lines = d.text!.split('\n');
   const lh = (s.fontSize || 14) * 1.3;
-  const y0 = anchor.y - ((lines.length - 1) * lh) / 2;
-  lines.forEach((ln, i) => ctx.fillText(ln, anchor.x, y0 + i * lh));
+  const gap = 4; // px gap between line and bottom of text
+  // Stack multi-line text upward from the line
+  lines.forEach((ln, i) => {
+    const yOff = -(lines.length - 1 - i) * lh - gap;
+    ctx.fillText(ln, 0, yOff);
+  });
+
   ctx.restore();
 }
 
@@ -734,7 +764,23 @@ export function hitTest(d: Drawing, pts: Pt[], m: Pt, w: number, h: number, env?
   return false;
 }
 
-export function handleHit(pts: Pt[], m: Pt): number {
-  for (let i = 0; i < pts.length; i++) if (Math.hypot(m.x - pts[i].x, m.y - pts[i].y) < 8) return i;
+export function getRectHandles(pts: Pt[]): Pt[] {
+  if (pts.length < 2) return pts;
+  const p1 = pts[0], p2 = pts[1];
+  return [
+    p1,                                         // 0: p1
+    { x: (p1.x + p2.x) / 2, y: p1.y },          // 1: top-mid (assuming p1 is top)
+    { x: p2.x, y: p1.y },                       // 2: tr
+    { x: p2.x, y: (p1.y + p2.y) / 2 },          // 3: right-mid
+    p2,                                         // 4: p2
+    { x: (p1.x + p2.x) / 2, y: p2.y },          // 5: bottom-mid
+    { x: p1.x, y: p2.y },                       // 6: bl
+    { x: p1.x, y: (p1.y + p2.y) / 2 },          // 7: left-mid
+  ];
+}
+
+export function handleHit(d: Drawing, pts: Pt[], m: Pt): number {
+  const handles = d.type === 'rect' ? getRectHandles(pts) : pts;
+  for (let i = 0; i < handles.length; i++) if (Math.hypot(m.x - handles[i].x, m.y - handles[i].y) < 8) return i;
   return -1;
 }

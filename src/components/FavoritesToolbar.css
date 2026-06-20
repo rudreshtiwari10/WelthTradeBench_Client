@@ -1,0 +1,84 @@
+/* FavoritesToolbar.css */
+
+.fav-toolbar {
+  position: absolute;
+  top: 60px;
+  left: 80px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  background: var(--bg-props, rgba(24, 26, 33, 0.85));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color, #2a2e39);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  gap: 2px;
+  user-select: none;
+  transition: opacity 0.2s;
+}
+
+.fav-toolbar.collapsed {
+  /* When collapsed, it still shows the drag handle and a star button */
+  padding-right: 2px;
+}
+
+.fav-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 36px;
+  cursor: grab;
+  color: #5d606b;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.fav-handle:hover {
+  color: #d1d4dc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.fav-handle:active {
+  cursor: grabbing;
+}
+
+.fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-color, #d1d4dc);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.fav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.fav-btn.active {
+  color: var(--brand-color, #2962ff);
+}
+
+.fav-btn.active:hover {
+  background: rgba(41, 98, 255, 0.1);
+}
+
+.fav-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.fav-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border-color, #2a2e39);
+  margin: 0 4px;
+}

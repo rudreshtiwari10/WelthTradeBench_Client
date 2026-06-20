@@ -12,6 +12,7 @@ import { SymbolSearch } from './components/SymbolSearch';
 import { ToastHost } from './components/Toast';
 import { AutosaveWorker } from './components/AutosaveWorker';
 import { PendingApproval } from './components/PendingApproval';
+import { FavoritesToolbar } from './components/FavoritesToolbar';
 import { Icon } from './icons/Icon';
 import { useShortcuts } from './hooks/useShortcuts';
 import { useUiStore } from './state/uiStore';
@@ -105,6 +106,7 @@ export default function App() {
       <TopToolbar />
       <div className="app-body">
         <LeftToolbar />
+        <FavoritesToolbar />
         <div className="app-center">
           <ChartArea />
           <BottomBar />

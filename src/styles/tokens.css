@@ -30,8 +30,8 @@
   --vol-down: rgba(239, 83, 80, 0.45);
 
   /* Geometry — matched to TradingView's 2024 sizing */
-  --topbar-h: 46px;
-  --leftbar-w: 56px;
+  --topbar-h: 52px;
+  --leftbar-w: 60px;
   --rightpanel-w: 320px;
   --bottombar-h: 32px;
 

@@ -195,13 +195,14 @@ export const EW_LABELS: Record<string, string[]> = {
 };
 
 export const DEFAULT_STYLE: DStyle = {
-  color: '#2962ff',
+  color: '#ffffff',
   width: 2,
   style: 'solid',
-  fill: 'rgba(41,98,255,0.12)',
-  fillOpacity: 0.12,
+  fill: 'rgba(255,255,255,0.08)',
+  fillOpacity: 0.08,
   fontSize: 14,
   textColor: '#d1d4dc',
+  fibReverse: false,
 };
 
 export const FIB_LEVELS = [

@@ -19,6 +19,7 @@ export interface StyleTemplate {
   name: string;
   style: DStyle;
   toolType?: string;   // tool this template was saved from (TradingView scopes per type)
+  text?: string;       // optional text label saved with the template
 }
 
 /**
@@ -77,6 +78,7 @@ interface RawDrawingState {
   locked: boolean;
   hidden: boolean;
   pendingText: string | null;
+  defaultText: string | null;  // text applied to new drawings after template apply
   favorites: FavDef[];
   templates: StyleTemplate[];
   clipboard: Drawing | null;
@@ -111,6 +113,7 @@ interface RawDrawingState {
 
   setStyle: (key: string, id: string, patch: Partial<DStyle>) => void;
   setDefaultStyle: (patch: Partial<DStyle>) => void;
+  setDefaultText: (text: string | null) => void;
 
   toggleHideDrawing: (key: string, id: string) => void;
   renameDrawing: (key: string, id: string, name: string) => void;
@@ -125,7 +128,7 @@ interface RawDrawingState {
   isFavorite: (label: string) => boolean;
   setFavorites: (favs: FavDef[]) => void;
 
-  saveTemplate: (name: string, style: DStyle, toolType?: string) => void;
+  saveTemplate: (name: string, style: DStyle, toolType?: string, text?: string) => void;
   applyTemplate: (key: string, id: string) => void;
   deleteTemplate: (id: string) => void;
 
@@ -156,6 +159,7 @@ export const useDrawingStoreRaw = create<RawDrawingState>((set, get) => ({
   locked: false,
   hidden: false,
   pendingText: null,
+  defaultText: null,
   favorites: loadFavs(),
   templates: loadTmpls(),
   clipboard: null,
@@ -283,6 +287,7 @@ export const useDrawingStoreRaw = create<RawDrawingState>((set, get) => ({
       };
     }),
   setDefaultStyle: (patch) => set((s) => ({ defaultStyle: { ...s.defaultStyle, ...patch } })),
+  setDefaultText: (text) => set({ defaultText: text }),
 
   toggleHideDrawing: (key, id) =>
     set((s) => {
@@ -367,17 +372,23 @@ export const useDrawingStoreRaw = create<RawDrawingState>((set, get) => ({
   isFavorite: (label) => get().favorites.some((f) => f.label === label),
   setFavorites: (favs) => { saveFavs(favs); set({ favorites: favs }); },
 
-  saveTemplate: (name, style, toolType) => {
-    const t: StyleTemplate = { id: tmplId(), name, style: { ...style }, toolType };
+  saveTemplate: (name, style, toolType, text) => {
+    const t: StyleTemplate = { id: tmplId(), name, style: { ...style }, toolType, text };
     set((s) => { const arr = [...s.templates, t]; saveTmpls(arr); return { templates: arr }; });
   },
 
   applyTemplate: (key, templateId) => {
     const s = get();
     const t = s.templates.find((x) => x.id === templateId);
+    if (!t) return;
     const id = s.selectedIdByKey[key];
-    if (!t || !id) return;
-    s.setStyle(key, id, t.style);
+    // Apply style (and text) to the selected drawing if any
+    if (id) {
+      s.setStyle(key, id, t.style);
+      if (t.text !== undefined) s.updateDrawing(key, id, { text: t.text });
+    }
+    // Also update defaultStyle + defaultText so NEW drawings use this template
+    set({ defaultStyle: { ...s.defaultStyle, ...t.style }, defaultText: t.text ?? null });
   },
 
   deleteTemplate: (id) =>
@@ -447,6 +458,7 @@ export interface DrawingView {
   history: Drawing[][];
   future: Drawing[][];
   defaultStyle: DStyle;
+  defaultText: string | null;
   activeTool: Tool;
   magnet: boolean;
   stayInDrawing: boolean;
@@ -480,6 +492,7 @@ export interface DrawingView {
 
   setStyle: (id: string, patch: Partial<DStyle>) => void;
   setDefaultStyle: (patch: Partial<DStyle>) => void;
+  setDefaultText: (text: string | null) => void;
 
   toggleHideDrawing: (id: string) => void;
   renameDrawing: (id: string, name: string) => void;
@@ -494,7 +507,7 @@ export interface DrawingView {
   isFavorite: (label: string) => boolean;
   setFavorites: (favs: FavDef[]) => void;
 
-  saveTemplate: (name: string, style: DStyle, toolType?: string) => void;
+  saveTemplate: (name: string, style: DStyle, toolType?: string, text?: string) => void;
   applyTemplate: (id: string) => void;
   deleteTemplate: (id: string) => void;
 
@@ -510,6 +523,7 @@ function buildView(key: string, raw: RawDrawingState): DrawingView {
     history: raw.historyByKey[key] ?? [],
     future: raw.futureByKey[key] ?? [],
     defaultStyle: raw.defaultStyle,
+    defaultText: raw.defaultText,
     activeTool: raw.activeTool,
     magnet: raw.magnet,
     stayInDrawing: raw.stayInDrawing,
@@ -532,6 +546,7 @@ function buildView(key: string, raw: RawDrawingState): DrawingView {
     toggleLocked: raw.toggleLocked,
     toggleHidden: raw.toggleHidden,
     setDefaultStyle: raw.setDefaultStyle,
+    setDefaultText: raw.setDefaultText,
     toggleFavorite: raw.toggleFavorite,
     isFavorite: raw.isFavorite,
     setFavorites: raw.setFavorites,

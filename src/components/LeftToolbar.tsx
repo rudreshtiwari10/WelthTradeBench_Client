@@ -16,7 +16,7 @@ export function LeftToolbar() {
   } = useDrawingStoreRaw();
   const activeKey = useActiveDrawingKey();
   const clearAll = () => useDrawingStoreRaw.getState().clearAll(activeKey);
-  const { objectTreeOpen, toggleObjectTree } = useUiStore();
+  const { objectTreeOpen, toggleObjectTree, showFavoritesToolbar, toggleFavoritesToolbar } = useUiStore();
   const [collapsed, setCollapsed] = useState(false);
   const [flyout, setFlyout] = useState<string | null>(null);
   const [picked, setPicked] = useState<Record<string, IconName>>({});
@@ -79,35 +79,7 @@ export function LeftToolbar() {
         ))}
       </div>
 
-      {/* ── Divider ── */}
-      <div className="leftbar-divider" />
 
-      {/* ── Favorites section (below emoji) ── */}
-      <div className="leftbar-favs-section">
-        <div className="leftbar-favs-label" title="Starred tools — drag to reorder, ★ to add from any flyout">
-          ★
-        </div>
-        {favorites.length === 0 && (
-          <div className="leftbar-favs-empty" title="Star any tool in the flyout menus to add it here">+</div>
-        )}
-        {favorites.map((fav, idx) => (
-          <button
-            key={fav.label}
-            className={`tool-btn icon-btn leftbar-fav-btn ${activeTool === fav.tool ? 'active' : ''}`}
-            title={`${fav.label}\nRight-click to remove`}
-            draggable
-            onDragStart={() => { dragFavIdx.current = idx; }}
-            onDragOver={(e) => { e.preventDefault(); }}
-            onDrop={() => { if (dragFavIdx.current !== null) { reorderFavs(dragFavIdx.current, idx); dragFavIdx.current = null; } }}
-            onClick={() => chooseFav(fav)}
-            onContextMenu={(e) => { e.preventDefault(); toggleFavorite(fav); }}
-          >
-            {fav.text
-              ? <span className="leftbar-fav-emoji">{fav.text}</span>
-              : <Icon name={fav.icon} size={20} />}
-          </button>
-        ))}
-      </div>
 
       <div className="leftbar-spacer" />
 
@@ -118,6 +90,7 @@ export function LeftToolbar() {
         <button className={`icon-btn ${locked ? 'active' : ''}`} title="Lock all drawings" onClick={toggleLocked}><Icon name="lock" size={18} /></button>
         <button className={`icon-btn ${hidden ? 'active' : ''}`} title={hidden ? 'Show all drawings' : 'Hide all drawings'} onClick={toggleHidden}><Icon name={hidden ? 'eyeOff' : 'eye'} size={18} /></button>
         <button className={`icon-btn ${objectTreeOpen ? 'active' : ''}`} title="Object tree" onClick={toggleObjectTree}><Icon name="layout" size={18} /></button>
+        <button className={`icon-btn ${showFavoritesToolbar ? 'active' : ''}`} title={showFavoritesToolbar ? 'Hide Favorites Toolbar' : 'Show Favorites Toolbar'} onClick={toggleFavoritesToolbar}><Icon name="star" size={18} /></button>
         <button className="icon-btn" title="Remove all drawings" onClick={() => { if (confirm('Remove all drawings?')) clearAll(); }}><Icon name="trash" size={18} /></button>
         <button className="icon-btn" title="Collapse toolbar" onClick={() => setCollapsed(true)}><Icon name="chevronLeft" size={18} /></button>
       </div>

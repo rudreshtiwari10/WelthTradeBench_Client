@@ -35,6 +35,9 @@ interface UiState {
   drawingSettingsId: string | null;
   openDrawingSettings: (id: string) => void;
   closeDrawingSettings: () => void;
+  // Floating favorites toolbar visibility
+  showFavoritesToolbar: boolean;
+  toggleFavoritesToolbar: () => void;
 }
 
 const initialTheme: Theme = (localStorage.getItem('theme') as Theme) || 'dark';
@@ -74,4 +77,10 @@ export const useUiStore = create<UiState>((set) => ({
   drawingSettingsId: null,
   openDrawingSettings: (id) => set({ drawingSettingsId: id }),
   closeDrawingSettings: () => set({ drawingSettingsId: null }),
+  showFavoritesToolbar: localStorage.getItem('showFavBar') !== 'false', // Default true
+  toggleFavoritesToolbar: () => set((s) => {
+    const next = !s.showFavoritesToolbar;
+    try { localStorage.setItem('showFavBar', String(next)); } catch { /* */ }
+    return { showFavoritesToolbar: next };
+  }),
 }));
