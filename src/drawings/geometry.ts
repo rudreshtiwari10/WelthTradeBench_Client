@@ -108,7 +108,7 @@ export function renderDrawing(
       }
       break;
     case 'fib': if (pts[1]) renderFib(ctx, pts[0], pts[1], prices, s, w); break;
-    case 'fibext': if (pts[2]) renderFibExt(ctx, pts, prices, w); break;
+    case 'fibext': if (pts[2]) renderFibExt(ctx, pts, prices, d.style, w); break;
     case 'triangle':
       if (pts[2]) {
         ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.closePath();
@@ -147,7 +147,7 @@ export function renderDrawing(
       break;
     case 'longpos':
     case 'shortpos':
-      if (pts[2]) renderPosition(ctx, d.type, pts, prices, w);
+      if (pts[2]) renderPosition(ctx, d.type, pts, prices, w, d.style);
       else if (pts[1]) line(pts[0], pts[1]);
       break;
     case 'text':
@@ -426,6 +426,7 @@ function renderPosition(
   pts: Pt[],
   prices: number[],
   canvasW: number,
+  s: DStyle,
 ) {
   const [entry, target, stop] = pts;
   const [entryP, targetP, stopP] = prices;
@@ -465,12 +466,29 @@ function renderPosition(
     ctx.stroke();
   }
 
-  // ── Badges centered on the box ──
+  // ── Risk / reward / size calculations (TradingView parity) ──
   const reward    = Math.abs(targetP - entryP);
   const risk      = Math.abs(entryP - stopP) || 1e-9;
   const rr        = reward / risk;
   const rewardPct = entryP ? ((targetP - entryP) / entryP) * 100 : 0;
   const riskPct   = entryP ? ((stopP   - entryP) / entryP) * 100 : 0;
+  const tick      = s.posTick && s.posTick > 0 ? s.posTick : 0.05;
+  const lotSize   = s.posLotSize && s.posLotSize > 0 ? s.posLotSize : 1;
+  // Qty: manual override, else sized from risk (Qty = riskMoney / (entry−stop)).
+  let qty: number;
+  if (s.posQty && s.posQty > 0) {
+    qty = s.posQty;
+  } else {
+    // Default account/risk so qty + P&L show immediately, like TradingView.
+    const acct = s.posAccountSize && s.posAccountSize > 0 ? s.posAccountSize : 100000;
+    const riskMoney = s.posRiskMode === 'amount' ? (s.posRisk ?? 1000) : acct * ((s.posRisk ?? 1) / 100);
+    qty = riskMoney > 0 ? Math.max(0, Math.round(riskMoney / (risk * lotSize)) * lotSize) : 0;
+  }
+  const profitAmt  = reward * qty * lotSize;
+  const lossAmt    = risk   * qty * lotSize;
+  const rewardTicks = Math.round(reward / tick);
+  const riskTicks   = Math.round(risk / tick);
+  const fmtMoney = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
   ctx.font = '12px sans-serif';
   ctx.textBaseline = 'middle';
@@ -494,11 +512,13 @@ function renderPosition(
   };
 
   const isLong = type === 'longpos';
-  drawBadge(target, `Target: ${fmt(targetP)} (${rewardPct.toFixed(2)}%)`, profitColor, !isLong);
-  drawBadge(stop,   `Stop: ${fmt(stopP)} (${riskPct.toFixed(2)}%)`,         lossColor,   isLong);
+  drawBadge(target, `Target ${fmt(targetP)} (${rewardPct.toFixed(2)}%) · ${rewardTicks} ticks${qty ? ` · ${fmtMoney(profitAmt)}` : ''}`, profitColor, !isLong);
+  drawBadge(stop,   `Stop ${fmt(stopP)} (${riskPct.toFixed(2)}%) · ${riskTicks} ticks${qty ? ` · ${fmtMoney(lossAmt)}` : ''}`,           lossColor,   isLong);
 
   // Middle RR Badge (centered exactly on entry)
-  const rrLabel1 = `Open P&L: 0.00, Qty: 0`;
+  const rrLabel1 = qty
+    ? `Qty: ${qty.toLocaleString('en-IN')}  ·  P&L: +${fmtMoney(profitAmt)} / −${fmtMoney(lossAmt)}`
+    : `Set account & risk in settings for P&L`;
   const rrLabel2 = `Risk/reward ratio: ${rr.toFixed(2)}`;
   ctx.font = '12px sans-serif';
   const twMid = Math.max(ctx.measureText(rrLabel1).width, ctx.measureText(rrLabel2).width) + 20;
@@ -570,19 +590,72 @@ function measureLabel(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, prices: numbe
   ctx.restore();
 }
 
-function renderFibExt(ctx: CanvasRenderingContext2D, pts: Pt[], prices: number[], w: number) {
+// Trend-Based Fib Extension — 3 points (P1 start, P2 end-of-move, P3 end-of-retrace).
+// Each level L projects from P3: price = P3 + (P2 − P1) × L. Honors the same
+// per-level config + display options as Fib Retracement.
+function renderFibExt(ctx: CanvasRenderingContext2D, pts: Pt[], prices: number[], s: DStyle, w: number) {
   const [a, b, c] = pts;
-  const range = prices[1] - prices[0];
-  ctx.save(); ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
-  ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = '#787b86';
+  const levels: FibLevelConfig[] = s.fibLevels ?? DEFAULT_FIB_LEVELS;
+  const showPrices = s.fibShowPrices !== false;
+  const showLevels = s.fibShowLevels !== false;
+  const showBg     = s.fibShowBackground !== false;
+  const reverse    = !!s.fibReverse;
+  const extendMode = s.fibExtend ?? 'none';
+  const labelPos   = s.fibLabelPosition ?? 'left';
+  const labelAlign = s.fibLabelAlign ?? 'top';
+  const fSize      = s.fibFontSize ?? 11;
+
+  // The P1→P2 move (reverse flips it vertically); levels project from P3.
+  let dyAB = b.y - a.y, dpAB = prices[1] - prices[0];
+  if (reverse) { dyAB = -dyAB; dpAB = -dpAB; }
+  const originY = c.y, originPrice = prices[2];
+
+  const xs = [a.x, b.x, c.x];
+  const anchorLeft = Math.min(...xs), anchorRight = Math.max(...xs);
+  const xL = (extendMode === 'left' || extendMode === 'both') ? 0 : anchorLeft;
+  const xR = (extendMode === 'right' || extendMode === 'both') ? w : anchorRight;
+
+  ctx.save();
+  ctx.font = `${fSize}px sans-serif`;
+  ctx.textBaseline = labelAlign === 'top' ? 'bottom' : labelAlign === 'bottom' ? 'top' : 'middle';
+
+  // Connecting trend path P1→P2→P3
+  ctx.strokeStyle = s.color; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.stroke();
-  const xR = Math.max(c.x + 120, w);
-  for (const lv of FIB_LEVELS) {
-    const price = prices[2] + range * lv;
-    const y = c.y + (b.y - a.y) * lv;
-    const col = FIB_COLORS[lv] || '#2962ff';
-    ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(c.x, y); ctx.lineTo(xR, y); ctx.stroke();
-    ctx.fillStyle = col; ctx.fillText(`${lv}  ${fmt(price)}`, c.x + 4, y - 7);
+  ctx.setLineDash([]);
+
+  const computed: { lv: number; y: number; price: number; color: string }[] = [];
+  for (const lc of levels) {
+    if (!lc.enabled) continue;
+    computed.push({ lv: lc.level, y: originY + dyAB * lc.level, price: originPrice + dpAB * lc.level, color: lc.color });
+  }
+
+  if (showBg) {
+    for (let i = 1; i < computed.length; i++) {
+      const prev = computed[i - 1], cur = computed[i];
+      ctx.globalAlpha = 0.06; ctx.fillStyle = cur.color;
+      ctx.fillRect(anchorLeft, Math.min(prev.y, cur.y), anchorRight - anchorLeft, Math.abs(cur.y - prev.y));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  for (const { lv, y, price, color } of computed) {
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y); ctx.stroke();
+
+    const parts: string[] = [];
+    if (showLevels) parts.push(String(lv));
+    if (showPrices) parts.push(`(${fmt(price)})`);
+    const label = parts.join(' ');
+    if (!label) continue;
+
+    const pad = 4;
+    let lx: number;
+    if (labelPos === 'left') { ctx.textAlign = 'left'; lx = anchorLeft + pad; }
+    else if (labelPos === 'right') { ctx.textAlign = 'right'; lx = anchorRight - pad; }
+    else { ctx.textAlign = 'center'; lx = (anchorLeft + anchorRight) / 2; }
+    const yOff = labelAlign === 'top' ? -3 : labelAlign === 'bottom' ? 3 : 0;
+    ctx.fillStyle = color; ctx.fillText(label, lx, y + yOff);
   }
   ctx.restore();
 }

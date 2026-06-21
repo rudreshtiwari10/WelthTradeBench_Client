@@ -117,6 +117,7 @@ export interface DStyle {
   showPriceLabel?: boolean;  // show price tag on right axis
   // ── Data-driven tool options (VWAP / volume profile) ─────────────────
   vpRows?: number;           // volume-profile row count (default 24)
+  vpMode?: 'updown' | 'total' | 'delta';  // histogram volume display mode
   vpWidth?: number;          // volume-profile box width percentage 0-100 (default 30)
   vpPlacement?: 'left' | 'right'; // histogram alignment
   vpValueArea?: number;      // value area percentage 0-100 (default 70)
@@ -144,6 +145,13 @@ export interface DStyle {
   fibLabelPosition?: 'left' | 'center' | 'right';       // label horizontal pos
   fibLabelAlign?: 'top' | 'middle' | 'bottom';          // label vertical align
   fibFontSize?: number;                                  // label font size
+  // ── Long/Short position options (TradingView parity) ─────────────────
+  posAccountSize?: number;   // account balance used for risk-based sizing
+  posRiskMode?: 'percent' | 'amount';  // risk as % of account or fixed money
+  posRisk?: number;          // risk value (percent or money per posRiskMode)
+  posQty?: number;           // manual qty override (0/undefined = auto from risk)
+  posLotSize?: number;       // contract/lot multiplier applied to P&L
+  posTick?: number;          // instrument tick size (for ticks display)
 }
 
 export interface Drawing {

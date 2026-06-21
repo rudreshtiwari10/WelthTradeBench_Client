@@ -314,17 +314,154 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
               );
             })()}
 
-            {/* Volume Profile options */}
+            {/* Volume Profile options (TradingView parity) */}
             {VP_TOOLS.has(d.type) && (
-              <div className="dsm-row">
-                <label className="dsm-label">Rows</label>
-                <input
-                  type="number" min="6" max="100" step="1"
-                  className="dsm-number"
-                  value={s.vpRows ?? 24}
-                  onChange={(e) => patchStyle({ vpRows: parseInt(e.target.value) || 24 })}
-                />
-              </div>
+              <>
+                <div className="dsm-row">
+                  <label className="dsm-label">Volume</label>
+                  <div className="dsm-btns">
+                    {([['updown', 'Up/Down'], ['total', 'Total'], ['delta', 'Delta']] as const).map(([m, lbl]) => (
+                      <button
+                        key={m}
+                        className={`dsm-btn ${(s.vpMode ?? 'updown') === m ? 'active' : ''}`}
+                        onClick={() => patchStyle({ vpMode: m })}
+                      >{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Rows</label>
+                  <input
+                    type="number" min="6" max="100" step="1"
+                    className="dsm-number"
+                    value={s.vpRows ?? 24}
+                    onChange={(e) => patchStyle({ vpRows: parseInt(e.target.value) || 24 })}
+                  />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Width %</label>
+                  <input
+                    type="range" min="5" max="90" step="1"
+                    className="dsm-range"
+                    value={s.vpWidth ?? 30}
+                    onChange={(e) => patchStyle({ vpWidth: parseInt(e.target.value) })}
+                  />
+                  <span className="dsm-range-val">{s.vpWidth ?? 30}%</span>
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Placement</label>
+                  <div className="dsm-btns">
+                    {(['left', 'right'] as const).map((p) => (
+                      <button
+                        key={p}
+                        className={`dsm-btn ${(s.vpPlacement ?? 'left') === p ? 'active' : ''}`}
+                        onClick={() => patchStyle({ vpPlacement: p })}
+                      >{p[0].toUpperCase() + p.slice(1)}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Value area %</label>
+                  <input
+                    type="number" min="0" max="100" step="1"
+                    className="dsm-number"
+                    value={s.vpValueArea ?? 70}
+                    onChange={(e) => patchStyle({ vpValueArea: parseInt(e.target.value) || 70 })}
+                  />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Up color</label>
+                  <input type="color" className="dsm-color-input"
+                    value={(s.vpUpColorVA || '#26a69a').slice(0, 7)}
+                    onChange={(e) => patchStyle({ vpUpColorVA: e.target.value, vpUpColor: e.target.value })} />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Down color</label>
+                  <input type="color" className="dsm-color-input"
+                    value={(s.vpDownColorVA || '#ef5350').slice(0, 7)}
+                    onChange={(e) => patchStyle({ vpDownColorVA: e.target.value, vpDownColor: e.target.value })} />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">POC</label>
+                  <label className="dsm-check">
+                    <input type="checkbox" checked={s.vpShowPOC !== false}
+                      onChange={(e) => patchStyle({ vpShowPOC: e.target.checked })} />
+                    Show
+                  </label>
+                  <input type="color" className="dsm-color-input"
+                    value={(s.vpPocColor || '#ff9800').slice(0, 7)}
+                    onChange={(e) => patchStyle({ vpPocColor: e.target.value })} />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Value area</label>
+                  <label className="dsm-check">
+                    <input type="checkbox" checked={s.vpShowVA !== false}
+                      onChange={(e) => patchStyle({ vpShowVA: e.target.checked })} />
+                    Show VAH/VAL
+                  </label>
+                </div>
+              </>
+            )}
+
+            {/* Long/Short position sizing (TradingView parity) */}
+            {(d.type === 'longpos' || d.type === 'shortpos') && (
+              <>
+                <div className="dsm-row">
+                  <label className="dsm-label">Account size</label>
+                  <input
+                    type="number" min="0" step="1000"
+                    className="dsm-number"
+                    value={s.posAccountSize ?? 100000}
+                    onChange={(e) => patchStyle({ posAccountSize: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Risk</label>
+                  <input
+                    type="number" min="0" step="0.1"
+                    className="dsm-number"
+                    value={s.posRisk ?? 1}
+                    onChange={(e) => patchStyle({ posRisk: parseFloat(e.target.value) || 0 })}
+                  />
+                  <div className="dsm-btns">
+                    {(['percent', 'amount'] as const).map((m) => (
+                      <button
+                        key={m}
+                        className={`dsm-btn ${(s.posRiskMode ?? 'percent') === m ? 'active' : ''}`}
+                        onClick={() => patchStyle({ posRiskMode: m })}
+                      >{m === 'percent' ? '%' : '₹'}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Qty (manual)</label>
+                  <input
+                    type="number" min="0" step="1"
+                    className="dsm-number"
+                    placeholder="auto"
+                    value={s.posQty ?? ''}
+                    onChange={(e) => patchStyle({ posQty: parseInt(e.target.value) || undefined })}
+                  />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Lot size</label>
+                  <input
+                    type="number" min="1" step="1"
+                    className="dsm-number"
+                    value={s.posLotSize ?? 1}
+                    onChange={(e) => patchStyle({ posLotSize: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+                <div className="dsm-row">
+                  <label className="dsm-label">Tick size</label>
+                  <input
+                    type="number" min="0.01" step="0.01"
+                    className="dsm-number"
+                    value={s.posTick ?? 0.05}
+                    onChange={(e) => patchStyle({ posTick: parseFloat(e.target.value) || 0.05 })}
+                  />
+                </div>
+              </>
             )}
 
             {/* Fill options for shape tools */}
@@ -353,7 +490,7 @@ export function DrawingSettingsModal({ drawingId, onClose }: Props) {
             )}
 
             {/* ── Fibonacci Retracement settings (TradingView parity) ── */}
-            {d.type === 'fib' && (() => {
+            {(d.type === 'fib' || d.type === 'fibext') && (() => {
               const fibLevels: FibLevelConfig[] = s.fibLevels ?? DEFAULT_FIB_LEVELS.map((l) => ({ ...l }));
               const updateFibLevel = (idx: number, patch: Partial<FibLevelConfig>) => {
                 const next = fibLevels.map((l, i) => (i === idx ? { ...l, ...patch } : l));

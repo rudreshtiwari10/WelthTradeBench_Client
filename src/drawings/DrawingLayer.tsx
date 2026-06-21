@@ -133,7 +133,7 @@ export function DrawingLayer() {
         if (sizeRef.current.w !== w || sizeRef.current.h !== h || sizeRef.current.dpr !== dpr) {
           c.width = w * dpr; c.height = h * dpr;
           c.style.width = w + 'px'; c.style.height = h + 'px';
-          sizeRef.current = { w, h, dpr };
+          sizeRef.current = { w, h, dpr, plotW: sizeRef.current.plotW };
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);

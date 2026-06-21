@@ -268,29 +268,42 @@ export function renderVolumeProfile(
     ctx.setLineDash([]);
   }
 
+  // Volume display mode: up/down split, single total bar, or up−down delta.
+  const mode = s.vpMode ?? 'updown';
+  const maxDelta = Math.max(1e-9, ...totals.map((_, i) => Math.abs(volUp[i] - volDn[i])));
+  const barNorm = mode === 'delta' ? maxDelta : maxVol;
+
   for (let r = 0; r < ROWS; r++) {
     const rLo = pMin + r * rowH, rHi = rLo + rowH;
     const yA = toY(rHi), yB = toY(rLo);
     if (yA == null || yB == null) continue;
     const top = Math.min(yA, yB), barH = Math.max(1, Math.abs(yB - yA) - 1);
     const inVA = r >= vaDn && r <= vaUp;
-    
-    const wUp = (volUp[r] / maxVol) * maxBarW;
-    const wDn = (volDn[r] / maxVol) * maxBarW;
-    
     ctx.globalAlpha = inVA ? 0.8 : 0.3;
-    
-    ctx.fillStyle = inVA ? upColVA : upCol;
-    if (alignRight) {
-      ctx.fillRect(boxR - wUp, top, wUp, barH);
-      ctx.fillStyle = inVA ? dnColVA : dnCol;
-      ctx.fillRect(boxR - wUp - wDn, top, wDn, barH);
+
+    if (mode === 'total') {
+      const wT = (totals[r] / barNorm) * maxBarW;
+      ctx.fillStyle = inVA ? upColVA : upCol;
+      ctx.fillRect(alignRight ? boxR - wT : boxL, top, wT, barH);
+    } else if (mode === 'delta') {
+      const dlt = volUp[r] - volDn[r];
+      const wD = (Math.abs(dlt) / barNorm) * maxBarW;
+      ctx.fillStyle = dlt >= 0 ? (inVA ? upColVA : upCol) : (inVA ? dnColVA : dnCol);
+      ctx.fillRect(alignRight ? boxR - wD : boxL, top, wD, barH);
     } else {
-      ctx.fillRect(boxL, top, wUp, barH);
-      ctx.fillStyle = inVA ? dnColVA : dnCol;
-      ctx.fillRect(boxL + wUp, top, wDn, barH);
+      const wUp = (volUp[r] / barNorm) * maxBarW;
+      const wDn = (volDn[r] / barNorm) * maxBarW;
+      ctx.fillStyle = inVA ? upColVA : upCol;
+      if (alignRight) {
+        ctx.fillRect(boxR - wUp, top, wUp, barH);
+        ctx.fillStyle = inVA ? dnColVA : dnCol;
+        ctx.fillRect(boxR - wUp - wDn, top, wDn, barH);
+      } else {
+        ctx.fillRect(boxL, top, wUp, barH);
+        ctx.fillStyle = inVA ? dnColVA : dnCol;
+        ctx.fillRect(boxL + wUp, top, wDn, barH);
+      }
     }
-    
     ctx.globalAlpha = 1;
   }
 
